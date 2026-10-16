@@ -52,7 +52,9 @@ OBJS := \
 	build/host/typeset/TypesetBookBuild.o \
 	build/host/typeset/TypesetBookGray.o \
 	build/host/typeset/Utf8.o \
-	build/host/typeset/Zip.o
+	build/host/typeset/Zip.o \
+	build/host/book/typeface.o \
+	build/host/book/tsbook.o
 
 .PHONY: all clean
 
