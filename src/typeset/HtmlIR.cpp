@@ -319,6 +319,7 @@ WritingMode modeInSlice(const char* s, const size_t n, bool& found) {
 
 }  // namespace
 
+
 void splitReading(const uint32_t* rt, const uint8_t rtN, const uint8_t baseN, uint32_t* out, uint8_t* outCount) {
   for (uint8_t i = 0; i < baseN; ++i) {
     outCount[i] = 0;
@@ -406,6 +407,73 @@ bool htmlToAtomsPull(int (*read)(void*, char*, int), void* ctx, const AtomSink s
   return htmlFromSax(sax, sink, result);
 }
 
+static void faceFor(const HtmlSax& sax, const AtomSink& sink, const uint8_t parentScale, const uint8_t parentBold,
+                    uint8_t& scale, uint8_t& bold) {
+  scale = parentScale == 0 ? 100 : parentScale;
+  bold = parentBold;
+  int bestW = 0;
+  int bestS = 0;
+  if (eq(sax.name, "b") || eq(sax.name, "strong")) {
+    bold = 1;
+    bestW = 1;
+  }
+  if (sink.rules) {
+    const uint8_t n = sink.nRules > kMaxFaceRules ? kMaxFaceRules : sink.nRules;
+    for (uint8_t i = 0; i < n; ++i) {
+      const FaceRule& r = sink.rules[i];
+      if (r.tag[0] == 0 && r.cls[0] == 0) {
+        continue;
+      }
+      if (r.tag[0] && !eq(sax.name, r.tag)) {
+        continue;
+      }
+      if (r.cls[0] && !sax.hasClass(r.cls)) {
+        continue;
+      }
+      const int score = (r.tag[0] ? 1 : 0) + (r.cls[0] ? 10 : 0);
+      if (r.weight != 0 && score >= bestW) {
+        bold = r.weight == 2 ? 1 : 0;
+        bestW = score;
+      }
+      if (r.pct != 0 && score >= bestS) {
+        const int base = r.root ? 100 : (parentScale == 0 ? 100 : parentScale);
+        int next = base * static_cast<int>(r.pct) / 100;
+        if (next < 40) {
+          next = 40;
+        }
+        if (next > 200) {
+          next = 200;
+        }
+        scale = static_cast<uint8_t>(next);
+        bestS = score;
+      }
+    }
+  }
+  char style[180];
+  if (sax.attr("style", style, sizeof(style))) {
+    uint8_t w = 0;
+    uint8_t pct = 0;
+    uint8_t root = 0;
+    readFaceDecls(style, strlen(style), w, pct, root);
+    if (w == 2) {
+      bold = 1;
+    } else if (w == 1) {
+      bold = 0;
+    }
+    if (pct != 0) {
+      const int base = root ? 100 : (parentScale == 0 ? 100 : parentScale);
+      int next = base * static_cast<int>(pct) / 100;
+      if (next < 40) {
+        next = 40;
+      }
+      if (next > 200) {
+        next = 200;
+      }
+      scale = static_cast<uint8_t>(next);
+    }
+  }
+}
+
 static bool htmlFromSax(HtmlSax& sax, const AtomSink sink, HtmlIRResult* result) {
   HtmlIRResult local{};
   HtmlIRResult& res = result ? *result : local;
@@ -462,6 +530,24 @@ static bool htmlFromSax(HtmlSax& sax, const AtomSink sink, HtmlIRResult* result)
   EmphFrame emphFrames[8]{};
   uint8_t emphN = 0;
   uint8_t curEmph = 0;
+  uint8_t curScale = 100;
+  uint8_t curBold = 0;
+  struct FaceFrame {
+    int depth;
+    uint8_t scale;
+    uint8_t bold;
+  };
+  FaceFrame faceFrames[16]{};
+  uint8_t faceN = 0;
+  auto stamp = [&](Atom& a) {
+    a.emphasis = static_cast<uint8_t>((a.emphasis & kEmphasisMask) | (curBold ? kEmphasisBold : 0));
+    a.startEm = curScale == 100 ? 0 : curScale;
+  };
+  auto emitCh = [&](const uint32_t cp, const uint32_t* ruby, const uint8_t n, const uint32_t pos) {
+    Atom a = chAtom(cp, ruby, n, curEmph);
+    stamp(a);
+    emit(a, pos);
+  };
   bool pictureBody = false;
   bool inHeading = false;
   // Depths of open contents containers. A paragraph is one column while inside,
@@ -477,7 +563,7 @@ static bool htmlFromSax(HtmlSax& sax, const AtomSink sink, HtmlIRResult* result)
       return;
     }
     if (rubyBaseN == 1) {
-      emit(chAtom(rubyBase[0], rubyRt, rubyRtN, curEmph), pos);
+      emitCh(rubyBase[0], rubyRt, rubyRtN, pos);
     } else if (rubyRtN != rubyBaseN) {
       Atom g{};
       g.kind = AtomKind::Group;
@@ -491,9 +577,10 @@ static bool htmlFromSax(HtmlSax& sax, const AtomSink sink, HtmlIRResult* result)
         g.ruby[i] = rubyRt[i];
       }
       g.emphasis = curEmph;
+      stamp(g);
       emit(g, pos);
       for (uint8_t i = g.tcyCount; i < rubyBaseN; ++i) {
-        emit(chAtom(rubyBase[i], nullptr, 0, curEmph), pos);
+        emitCh(rubyBase[i], nullptr, 0, pos);
       }
     } else {
       uint32_t packed[8 * 4]{};
@@ -501,7 +588,7 @@ static bool htmlFromSax(HtmlSax& sax, const AtomSink sink, HtmlIRResult* result)
       const uint8_t bases = rubyBaseN > 8 ? 8 : rubyBaseN;
       splitReading(rubyRt, rubyRtN, bases, packed, counts);
       for (uint8_t i = 0; i < bases; ++i) {
-        emit(chAtom(rubyBase[i], packed + i * 4, counts[i], curEmph), pos);
+        emitCh(rubyBase[i], packed + i * 4, counts[i], pos);
       }
     }
     rubyBaseN = 0;
@@ -570,7 +657,7 @@ static bool htmlFromSax(HtmlSax& sax, const AtomSink sink, HtmlIRResult* result)
           titleBuf[titleN] = 0;
         }
       }
-      emit(chAtom(cp, nullptr, 0, curEmph), pos);
+      emitCh(cp, nullptr, 0, pos);
     }
   };
   (void)appendUtf8;
@@ -589,6 +676,17 @@ static bool htmlFromSax(HtmlSax& sax, const AtomSink sink, HtmlIRResult* result)
           emphFrames[emphN].prev = curEmph;
           ++emphN;
           curEmph = mark;
+        }
+        uint8_t scale = curScale;
+        uint8_t bold = curBold;
+        faceFor(sax, sink, curScale, curBold, scale, bold);
+        if ((scale != curScale || bold != curBold) && faceN < 16) {
+          faceFrames[faceN].depth = depth;
+          faceFrames[faceN].scale = curScale;
+          faceFrames[faceN].bold = curBold;
+          ++faceN;
+          curScale = scale;
+          curBold = bold;
         }
       }
       if (eq(sax.name, "html") || eq(sax.name, "body")) {
@@ -704,9 +802,9 @@ static bool htmlFromSax(HtmlSax& sax, const AtomSink sink, HtmlIRResult* result)
         const bool oneChar = nCp == 1 && !isPlaceholder(cps[0]);
         if (gaiji) {
           if (oneChar) {
-            emit(chAtom(cps[0], nullptr, 0, curEmph), sax.pos);
+            emitCh(cps[0], nullptr, 0, sax.pos);
           } else if (const uint32_t mapped = cidChar(cidFromSrc(src))) {
-            emit(chAtom(mapped, nullptr, 0, curEmph), sax.pos);
+            emitCh(mapped, nullptr, 0, sax.pos);
           }
         } else {
           uint16_t id = 0;
@@ -738,12 +836,13 @@ static bool htmlFromSax(HtmlSax& sax, const AtomSink sink, HtmlIRResult* result)
                 t.cp = digits[0];
                 t.tcyCount = dN;
                 t.emphasis = curEmph;
+                stamp(t);
                 for (uint8_t i = 0; i < dN; ++i) {
                   t.tcy[i] = digits[i];
                 }
                 emit(t, sax.pos);
               } else {
-                emit(chAtom(digits[0], nullptr, 0, curEmph), sax.pos);
+                emitCh(digits[0], nullptr, 0, sax.pos);
               }
               dN = 0;
             };
@@ -754,7 +853,7 @@ static bool htmlFromSax(HtmlSax& sax, const AtomSink sink, HtmlIRResult* result)
               }
               flushDigits();
               if (!isPlaceholder(cps[i])) {
-                emit(chAtom(cps[i], nullptr, 0, curEmph), sax.pos);
+                emitCh(cps[i], nullptr, 0, sax.pos);
               }
             }
             flushDigits();
@@ -767,18 +866,6 @@ static bool htmlFromSax(HtmlSax& sax, const AtomSink sink, HtmlIRResult* result)
       if (isSkip(sax.name) && skipDepth > 0) {
         --skipDepth;
         continue;
-      }
-      if (skipDepth == 0) {
-        if (emphN > 0 && emphFrames[emphN - 1].depth == depth) {
-          curEmph = emphFrames[emphN - 1].prev;
-          --emphN;
-        }
-        if (tocTop > 0 && tocStack[tocTop - 1] == depth) {
-          --tocTop;
-        }
-        if (depth > 0) {
-          --depth;
-        }
       }
       if (eq(sax.name, "rt")) {
         inRt = false;
@@ -804,6 +891,7 @@ static bool htmlFromSax(HtmlSax& sax, const AtomSink sink, HtmlIRResult* result)
           t.cp = tcyCps[0];
           t.tcyCount = tcyN;
           t.emphasis = curEmph;
+          stamp(t);
           for (uint8_t i = 0; i < tcyN && i < kMaxCluster; ++i) {
             t.tcy[i] = tcyCps[i];
           }
@@ -829,6 +917,23 @@ static bool htmlFromSax(HtmlSax& sax, const AtomSink sink, HtmlIRResult* result)
           Atom g{};
           g.kind = AtomKind::Gap;
           emit(g, sax.pos);
+        }
+      }
+      if (skipDepth == 0) {
+        if (emphN > 0 && emphFrames[emphN - 1].depth == depth) {
+          curEmph = emphFrames[emphN - 1].prev;
+          --emphN;
+        }
+        if (faceN > 0 && faceFrames[faceN - 1].depth == depth) {
+          curScale = faceFrames[faceN - 1].scale;
+          curBold = faceFrames[faceN - 1].bold;
+          --faceN;
+        }
+        if (tocTop > 0 && tocStack[tocTop - 1] == depth) {
+          --tocTop;
+        }
+        if (depth > 0) {
+          --depth;
         }
       }
       if (indentTop > 0) {

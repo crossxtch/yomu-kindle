@@ -1,5 +1,6 @@
 #include "Epub.h"
 
+#include "FaceCss.h"
 #include "HtmlSax.h"
 
 #include <Logging.h>
@@ -570,26 +571,6 @@ void applySelector(const char* sel, const size_t n, const WritingMode value, con
   }
 }
 
-void blankCssComments(char* s, const size_t n) {
-  for (size_t i = 0; i + 1 < n; ++i) {
-    if (s[i] != '/' || s[i + 1] != '*') {
-      continue;
-    }
-    size_t j = i + 2;
-    while (j + 1 < n && !(s[j] == '*' && s[j + 1] == '/')) {
-      ++j;
-    }
-    if (j + 1 < n) {
-      j += 2;
-    } else {
-      j = n;
-    }
-    for (size_t k = i; k < j; ++k) {
-      s[k] = ' ';
-    }
-    i = j > 0 ? j - 1 : 0;
-  }
-}
 
 void scanCssMode(char* css, const size_t n, const ModeClasses& htmlC, const ModeClasses& bodyC, int& best,
                  WritingMode& picked, bool& found) {
@@ -689,6 +670,35 @@ bool cssWritingMode(ZipArchive& zip, const char* chapterDir, const char* html, c
   }
   mode = picked;
   return true;
+}
+
+
+void fillFaceRules(ZipArchive& zip, const char* chapterDir, const char* html, const size_t n, FaceRule* rules,
+                   uint8_t& count) {
+  count = 0;
+  if (!rules) {
+    return;
+  }
+  char hrefs[kMaxCssLinks][96]{};
+  int nHref = 0;
+  if (html && n > 0) {
+    collectCssHrefs(html, n, hrefs, nHref);
+  }
+  for (int i = 0; i < nHref && count < kMaxFaceRules; ++i) {
+    const ZipArchive::Entry* ent = findCss(zip, chapterDir, hrefs[i]);
+    if (!ent || ent->uncompSize == 0 || ent->uncompSize > kMaxCssBytes) {
+      continue;
+    }
+    size_t cssN = 0;
+    uint8_t* raw = zip.extract(*ent, &cssN);
+    if (raw && cssN > 0 && cssN <= kMaxCssBytes) {
+      scanFaceCss(reinterpret_cast<char*>(raw), cssN, rules, count);
+    }
+    free(raw);
+  }
+  if (html && n > 0) {
+    scanStyleTags(html, n, rules, count);
+  }
 }
 
 bool takeWritingMode(const char* xml, size_t n, WritingMode bookMode, WritingMode& chapterMode);
@@ -798,7 +808,7 @@ bool EpubBook::open(const char* epubPath, const char* atomPath, ProgressFn progr
     return false;
   }
 
-  // A plain character atom is 7 bytes and this xhtml runs about 4 bytes per
+  // A plain character atom is 8 bytes and this xhtml runs about 4 bytes per
   // character, so the sidecar outgrows the chapters. Compare before the
   // 140-second walk. open() already truncated a partial sidecar from the last try.
   uint64_t htmlBytes = 0;
@@ -836,6 +846,8 @@ bool EpubBook::open(const char* epubPath, const char* atomPath, ProgressFn progr
     bool ok;
     uint16_t ch;
   } ctx{&writer, &zip, picsOn ? &pics : nullptr, {}, true, 0};
+  FaceRule faceRules[kMaxFaceRules]{};
+  uint8_t nFace = 0;
   AtomSink sink{};
   sink.ctx = &ctx;
   sink.emit = [](void* c, const Atom& a, uint32_t) -> bool {
@@ -934,6 +946,9 @@ bool EpubBook::open(const char* epubPath, const char* atomPath, ProgressFn progr
     if (!onDisk && xml && n > 0) {
       inflateMs += millis() - tInf;
       resolveChapterMode(zip, ctx.chapterDir, reinterpret_cast<char*>(xml), n, mode, chapterMode, sniffed);
+      fillFaceRules(zip, ctx.chapterDir, reinterpret_cast<char*>(xml), n, faceRules, nFace);
+      sink.rules = faceRules;
+      sink.nRules = nFace;
       items[i].atomOff = writer.position();
       writeChapterMode(writer, chapterMode);
       const unsigned long tSax = millis();
@@ -944,14 +959,18 @@ bool EpubBook::open(const char* epubPath, const char* atomPath, ProgressFn progr
     free(xml);
     if (!parsed && onDisk) {
       inflateMs += millis() - tInf;
+      nFace = 0;
       char* sniffBuf = static_cast<char*>(malloc(kModeSample));
       if (sniffBuf) {
         const int got = hf.read(sniffBuf, kModeSample);
         if (got > 0) {
           resolveChapterMode(zip, ctx.chapterDir, sniffBuf, static_cast<size_t>(got), mode, chapterMode, sniffed);
+          fillFaceRules(zip, ctx.chapterDir, sniffBuf, static_cast<size_t>(got), faceRules, nFace);
         }
         free(sniffBuf);
       }
+      sink.rules = faceRules;
+      sink.nRules = nFace;
       hf.seekSet(0);
       items[i].atomOff = writer.position();
       writeChapterMode(writer, chapterMode);

@@ -1659,6 +1659,176 @@ static void test_writing_mode(void) {
   free(page);
 }
 
+/* One kana on a 240 page. Linked CSS and an inline style set the weight and the em. */
+static int render_face(const char *dir, const char *name, const char *container, const char *opf, const char *css,
+                       const char *xhtml, int *ink, int *bw, int *bh, int *top_gap, int *bot_gap) {
+  char path[256];
+  struct ZipEnt ents[4];
+  uint8_t *page;
+  TsBook *book;
+  const int w = 240;
+  const int h = 240;
+
+  snprintf(path, sizeof path, "%s/%s", dir, name);
+  ents[0].name = "META-INF/container.xml";
+  ents[0].data = container;
+  ents[0].len = (uint32_t)strlen(container);
+  ents[1].name = "OEBPS/content.opf";
+  ents[1].data = opf;
+  ents[1].len = (uint32_t)strlen(opf);
+  ents[2].name = "OEBPS/stylesheet.css";
+  ents[2].data = css;
+  ents[2].len = (uint32_t)strlen(css);
+  ents[3].name = "OEBPS/chap.xhtml";
+  ents[3].data = xhtml;
+  ents[3].len = (uint32_t)strlen(xhtml);
+  if (write_stored_parts(path, ents, 4) != 0) {
+    return -1;
+  }
+  book = ts_open(path, dir, NULL, w, h);
+  if (!book) {
+    fprintf(stderr, "FAIL face open %s: %s\n", name, ts_error(NULL));
+    g_failed++;
+    return -1;
+  }
+  page = malloc((size_t)w * (size_t)h);
+  if (!page) {
+    ts_close(book);
+    return -1;
+  }
+  memset(page, 255, (size_t)w * (size_t)h);
+  if (ts_render(book, 0, page, w, h) != 1) {
+    fprintf(stderr, "FAIL face render %s\n", name);
+    g_failed++;
+    free(page);
+    ts_close(book);
+    return -1;
+  }
+  if (ink) {
+    *ink = ink_count(page, w * h);
+  }
+  if (bw || bh) {
+    int box_w = 0;
+    int box_h = 0;
+    ink_box(page, w, h, &box_w, &box_h);
+    if (bw) {
+      *bw = box_w;
+    }
+    if (bh) {
+      *bh = box_h;
+    }
+  }
+  if (top_gap || bot_gap) {
+    int min_y = h;
+    int max_y = -1;
+    int y;
+    int x;
+    for (y = 0; y < h; y++) {
+      for (x = 0; x < w; x++) {
+        if (page[(size_t)y * (size_t)w + (size_t)x] >= 250) {
+          continue;
+        }
+        if (y < min_y) {
+          min_y = y;
+        }
+        if (y > max_y) {
+          max_y = y;
+        }
+      }
+    }
+    if (top_gap) {
+      *top_gap = max_y < 0 ? h : min_y;
+    }
+    if (bot_gap) {
+      *bot_gap = max_y < 0 ? h : h - 1 - max_y;
+    }
+  }
+  free(page);
+  ts_close(book);
+  return 0;
+}
+
+/* b and strong are bold. A class rule is bold. 2em is taller. 0.5em of 2em
+ * comes back to the body. An inline normal clears the b. */
+static void test_face_style(void) {
+  const char *container =
+      "<?xml version=\"1.0\"?>"
+      "<container version=\"1.0\" xmlns=\"urn:oasis:names:tc:opendocument:xmlns:container\">"
+      "<rootfiles>"
+      "<rootfile full-path=\"OEBPS/content.opf\" media-type=\"application/oebps-package+xml\"/>"
+      "</rootfiles>"
+      "</container>";
+  const char *css =
+      "strong { font-weight: bold; }\n"
+      ".bold { font-weight: bold; }\n"
+      ".big { font-size: 2em; }\n"
+      ".half { font-size: 0.5em; }\n";
+  const char *opf =
+      "<?xml version=\"1.0\"?>"
+      "<package>"
+      "<metadata xmlns:dc=\"http://purl.org/dc/elements/1.1/\">"
+      "<dc:title>太さ</dc:title>"
+      "</metadata>"
+      "<manifest>"
+      "<item id=\"c1\" href=\"chap.xhtml\" media-type=\"application/xhtml+xml\"/>"
+      "<item id=\"css\" href=\"stylesheet.css\" media-type=\"text/css\"/>"
+      "</manifest>"
+      "<spine><itemref idref=\"c1\"/></spine>"
+      "</package>";
+  const char *kana = "\xe3\x81\x82";
+  const char *head =
+      "<?xml version=\"1.0\"?>"
+      "<html xmlns=\"http://www.w3.org/1999/xhtml\">"
+      "<head><link rel=\"stylesheet\" type=\"text/css\" href=\"stylesheet.css\"/></head><body>";
+  char dir[] = "/tmp/yomu-face-XXXXXX";
+  char xhtml[640];
+  int plain_ink = 0;
+  int plain_bh = 0;
+  int top_gap = 0;
+  int bot_gap = 0;
+  int bold_ink = 0;
+  int class_ink = 0;
+  int strong_ink = 0;
+  int big_bh = 0;
+  int nest_bh = 0;
+  int norm_ink = 0;
+
+  expect(mkdtemp(dir) != NULL, "face style dir");
+  snprintf(xhtml, sizeof xhtml, "%s<p>%s</p></body></html>", head, kana);
+  expect(render_face(dir, "plain.epub", container, opf, css, xhtml, &plain_ink, NULL, &plain_bh, &top_gap, &bot_gap) ==
+             0,
+         "plain face page");
+  snprintf(xhtml, sizeof xhtml, "%s<p><b>%s</b></p></body></html>", head, kana);
+  expect(render_face(dir, "bold.epub", container, opf, css, xhtml, &bold_ink, NULL, NULL, NULL, NULL) == 0,
+         "b face page");
+  snprintf(xhtml, sizeof xhtml, "%s<p><span class=\"bold\">%s</span></p></body></html>", head, kana);
+  expect(render_face(dir, "class.epub", container, opf, css, xhtml, &class_ink, NULL, NULL, NULL, NULL) == 0,
+         "class face page");
+  snprintf(xhtml, sizeof xhtml, "%s<p><strong>%s</strong></p></body></html>", head, kana);
+  expect(render_face(dir, "strong.epub", container, opf, css, xhtml, &strong_ink, NULL, NULL, NULL, NULL) == 0,
+         "strong face page");
+  snprintf(xhtml, sizeof xhtml, "%s<p><span class=\"big\">%s</span></p></body></html>", head, kana);
+  expect(render_face(dir, "big.epub", container, opf, css, xhtml, NULL, NULL, &big_bh, NULL, NULL) == 0,
+         "big face page");
+  snprintf(xhtml, sizeof xhtml, "%s<p><span class=\"big\"><span class=\"half\">%s</span></span></p></body></html>",
+           head, kana);
+  expect(render_face(dir, "nest.epub", container, opf, css, xhtml, NULL, NULL, &nest_bh, NULL, NULL) == 0,
+         "nested face page");
+  snprintf(xhtml, sizeof xhtml, "%s<p><b><span style=\"font-weight: normal\">%s</span></b></p></body></html>", head,
+           kana);
+  expect(render_face(dir, "normal.epub", container, opf, css, xhtml, &norm_ink, NULL, NULL, NULL, NULL) == 0,
+         "normal face page");
+
+  expect(plain_ink > 0 && plain_bh > 0, "plain kana has ink");
+  expect(top_gap >= 16 && bot_gap >= 16, "top and bottom stay clear");
+  expect(bold_ink > plain_ink, "b is heavier than the body");
+  expect(class_ink > plain_ink, "class bold is heavier than the body");
+  expect(strong_ink > plain_ink, "strong is heavier than the body");
+  expect(big_bh > plain_bh * 3 / 2, "2em is taller than the body");
+  expect(nest_bh < big_bh && nest_bh <= plain_bh + plain_bh / 4, "0.5em of 2em stays near the body");
+  expect(norm_ink < (plain_ink + bold_ink) / 2, "font-weight normal clears bold");
+}
+
 /* 520 files, past the old 512 slot table. Each file is one short paragraph. */
 static void test_long_spine(void) {
   const int n = 520;
@@ -1785,6 +1955,7 @@ int main(void) {
   test_japanese();
   test_typeset();
   test_writing_mode();
+  test_face_style();
   test_long_spine();
   test_ui();
   test_reader_gestures();

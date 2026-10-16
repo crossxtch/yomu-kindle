@@ -140,7 +140,7 @@ bool TypesetBook::loadFont(const char* fontPath) {
   }
   snprintf(facePath, sizeof(facePath), "%s", fontPath);
   LOG_INF("TS", "Font %s", fontPath);
-  if (!font.load(fontPath)) {
+  if (!font.load(fontPath, -1)) {
     error = font.lastError()[0] ? font.lastError() : "font missing";
     return false;
   }

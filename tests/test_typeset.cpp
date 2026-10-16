@@ -198,9 +198,8 @@ int inkIn(const uint8_t *page, int w, int x0, int y0, int x1, int y1) {
 }
 
 void testFace() {
-  /* Hiragino Mincho ProN is CFF (キ + combining dakuten in the file name).
-   * This FreeType build is TrueType only, so the face test falls through to
-   * Arial Unicode, which has a vert feature and Japanese glyphs. */
+  /* Arial Unicode has a vert feature and Japanese glyphs. Hiragino is checked
+   * separately so this assertion stays on the vert substitution. */
   const char *paths[] = {
       "/System/Library/Fonts/\xe3\x83\x92\xe3\x83\xa9\xe3\x82\xad\xe3\x82\x99\xe3\x83\x8e\xe6\x98\x8e\xe6\x9c\x9d ProN.ttc",
       "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
@@ -210,7 +209,7 @@ void testFace() {
   XgfFont font;
   const char *path = nullptr;
   for (int i = 0; paths[i]; ++i) {
-    if (font.load(paths[i])) {
+    if (font.load(paths[i], -1)) {
       path = paths[i];
       break;
     }
@@ -230,8 +229,8 @@ void testFace() {
   uint8_t flat[em * em];
   std::memset(vert, 255, sizeof vert);
   std::memset(flat, 255, sizeof flat);
-  check(font.drawGray(vert, em, em, 0, 0, em, em, 0x300C, em, true), "draw vertical 「");
-  check(font.drawGray(flat, em, em, 0, 0, em, em, 0x300C, em, false), "draw horizontal 「");
+  check(font.drawGray(vert, em, em, 0, 0, em, em, 0x300C, em, true, false), "draw vertical 「");
+  check(font.drawGray(flat, em, em, 0, 0, em, em, 0x300C, em, false, false), "draw horizontal 「");
   check(std::memcmp(vert, flat, sizeof vert) != 0, "vertical 「 uses the vert glyph");
   /* The vert glyph keeps the bracket low in the full em. A half-em cell slides it up. */
   const int top = inkIn(vert, em, 0, 0, em, em / 2);
@@ -243,7 +242,7 @@ void testFace() {
   const int halfH = em / 2;
   uint8_t half[em * 48];
   std::memset(half, 255, sizeof half);
-  check(font.drawGray(half, em, halfH, 0, 0, em, halfH, 0x300C, em, true), "draw 「 in a half-em cell");
+  check(font.drawGray(half, em, halfH, 0, 0, em, halfH, 0x300C, em, true, false), "draw 「 in a half-em cell");
   const int slid = inkIn(half, em, 0, 0, em, halfH);
   if (slid < 8) {
     std::fprintf(stderr, "FAIL typeset: half-em 「 ink=%d\n", slid);

@@ -66,7 +66,7 @@ bool AtomWriter::open(const char* path) {
       return false;
     }
   }
-  // IRA9. A mismatch rebuilds the file so chapter direction is parsed again.
+  // IRAA. A mismatch rebuilds the file so bold and relative size are parsed again.
   if (!writeU32(file, kAtomMagic)) {
     close();
     return false;
@@ -149,6 +149,7 @@ bool AtomWriter::write(const Atom& a) {
         u32(a.ruby[i]);
       }
       u8(a.emphasis);
+      u8(a.startEm);
       break;
     }
     case AtomKind::Group: {
@@ -163,6 +164,7 @@ bool AtomWriter::write(const Atom& a) {
         u32(a.ruby[i]);
       }
       u8(a.emphasis);
+      u8(a.startEm);
       break;
     }
     case AtomKind::Mode:
@@ -175,6 +177,7 @@ bool AtomWriter::write(const Atom& a) {
         u32(i == 0 ? a.cp : a.tcy[i]);
       }
       u8(a.emphasis);
+      u8(a.startEm);
       break;
     }
     case AtomKind::ColumnBreak:
@@ -244,10 +247,10 @@ bool AtomReader::next(Atom& a) {
         }
       }
       a.rubyCount = keep;
-      if (!readU8(file, a.emphasis)) {
+      if (!readU8(file, a.emphasis) || !readU8(file, a.startEm)) {
         return false;
       }
-      pos += 1;
+      pos += 2;
       break;
     }
     case AtomKind::Group: {
@@ -286,10 +289,10 @@ bool AtomReader::next(Atom& a) {
         }
       }
       a.rubyCount = keepRuby;
-      if (!readU8(file, a.emphasis)) {
+      if (!readU8(file, a.emphasis) || !readU8(file, a.startEm)) {
         return false;
       }
-      pos += 1;
+      pos += 2;
       break;
     }
     case AtomKind::Mode:
@@ -321,10 +324,10 @@ bool AtomReader::next(Atom& a) {
         }
       }
       a.tcyCount = keep;
-      if (!readU8(file, a.emphasis)) {
+      if (!readU8(file, a.emphasis) || !readU8(file, a.startEm)) {
         return false;
       }
-      pos += 1;
+      pos += 2;
       break;
     }
     case AtomKind::ColumnBreak:

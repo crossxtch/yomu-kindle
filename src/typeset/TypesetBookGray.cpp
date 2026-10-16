@@ -104,7 +104,8 @@ bool TypesetBook::renderGray(uint8_t* gray, const int w, const int h, const uint
 
     if (tcyRun) {
       const int n = g.rubyCount > ts::kMaxCluster ? ts::kMaxCluster : g.rubyCount;
-      int size = em * 45 / 100;
+      const int face = g.size > 0 ? static_cast<int>(g.size) : em;
+      int size = face * 45 / 100;
       if (size < 1) {
         size = 1;
       }
@@ -120,11 +121,12 @@ bool TypesetBook::renderGray(uint8_t* gray, const int w, const int h, const uint
         widths[r] = advW;
         total += advW;
       }
-      int x0 = g.x + (em - total) / 2;
-      const int y0 = g.y + (em - size) / 2;
+      int x0 = g.x + (face - total) / 2;
+      const int y0 = g.y + (face - size) / 2;
+      const bool bold = (g.flags & ts::kRunBold) != 0;
       for (int r = 0; r < n; ++r) {
         if (cps[r] != 0) {
-          font.drawGray(gray, w, h, x0, y0, widths[r], size, cps[r], size, false);
+          font.drawGray(gray, w, h, x0, y0, widths[r], size, cps[r], size, false, bold);
         }
         x0 += widths[r];
       }
@@ -133,8 +135,9 @@ bool TypesetBook::renderGray(uint8_t* gray, const int w, const int h, const uint
       const int cellW = vert ? emBox : adv;
       const int cellH = vert ? adv : emBox;
       const uint32_t cp = pickCp(font, g.cp);
+      const bool bold = (g.flags & ts::kRunBold) != 0;
       if (cp != 0 && cellW > 0 && cellH > 0) {
-        font.drawGray(gray, w, h, g.x, g.y, cellW, cellH, cp, emBox > 0 ? emBox : 1, vert);
+        font.drawGray(gray, w, h, g.x, g.y, cellW, cellH, cp, emBox > 0 ? emBox : 1, vert, bold);
       }
     }
 
@@ -237,9 +240,9 @@ bool TypesetBook::renderGray(uint8_t* gray, const int w, const int h, const uint
       }
       const int at = along.start + r * along.pitch;
       if (vert) {
-        font.drawGray(gray, w, h, g.x + body + beside, at, rubyEm, pitch, cp, rubyEm, false);
+        font.drawGray(gray, w, h, g.x + body + beside, at, rubyEm, pitch, cp, rubyEm, false, false);
       } else {
-        font.drawGray(gray, w, h, at, g.y - rubyEm - beside, pitch, rubyEm, cp, rubyEm, false);
+        font.drawGray(gray, w, h, at, g.y - rubyEm - beside, pitch, rubyEm, cp, rubyEm, false, false);
       }
     }
   }

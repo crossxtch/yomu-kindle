@@ -26,9 +26,12 @@ struct Atom {
   uint32_t ruby[kMaxCluster]{};  // Ch/Group reading. Tcy glyphs reuse this only on the run.
   uint8_t tcyCount = 0;
   uint32_t tcy[kMaxCluster]{};  // Tcy chars, or Group bases (base 0 duplicated in cp)
-  uint8_t startEm = 0;    // ColumnBreak
-  uint8_t emphasis = 0;   // 0 none, 1 圏点, 2 傍線
+  uint8_t startEm = 0;  // ColumnBreak indent. Ch/Tcy/Group: percent of the body em, 0 means 100.
+  uint8_t emphasis = 0;  // low bits: 0 none, 1 圏点, 2 傍線. kEmphasisBold is a heavier face.
 };
+
+constexpr uint8_t kEmphasisMask = 0x7f;
+constexpr uint8_t kEmphasisBold = 0x80;
 
 // flags: bit0 rotate90, bit1 tcy, bit2 rubyAbove, bit3 center ink in `advance`, bit4 sticky
 constexpr uint8_t kRunRotate = 1;
@@ -37,6 +40,7 @@ constexpr uint8_t kRunRubyAbove = 4;
 constexpr uint8_t kRunHalfCell = 8;
 constexpr uint8_t kRunSticky = 16;
 constexpr uint8_t kRunPicture = 32;  // cp is a picture id; size is the box width, advance the height
+constexpr uint8_t kRunBold = 64;
 
 struct GlyphRun {
   uint32_t cp = 0;
@@ -150,13 +154,13 @@ class PageLayouter {
 
   bool recomputeGrid();
   void resetCursor();
-  int16_t charAdvance(uint32_t cp, bool tcy) const;
+  int16_t charAdvance(uint32_t cp, bool tcy, int16_t em) const;
   void newPage();
   void newColumn();
   void newLine();
   void emit(const GlyphRun& run, uint32_t pos);
   void placeChar(uint32_t cp, const uint32_t* ruby, uint8_t rubyCount, bool tcy, uint8_t emphasis,
-                 const uint32_t* tcyCps, uint8_t tcyN);
+                 const uint32_t* tcyCps, uint8_t tcyN, uint8_t scale, uint8_t bold);
   void placeGroup(const Atom& atom);
   void placePicture(uint16_t id, int pxW, int pxH);
   uint16_t stickyTail(bool vertical) const;

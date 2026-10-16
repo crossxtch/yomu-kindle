@@ -4,9 +4,12 @@
 
 #include <ft2build.h>
 #include FT_FREETYPE_H
+#include FT_OUTLINE_H
+#include FT_SFNT_NAMES_H
 #include FT_TRUETYPE_TABLES_H
 #include FT_TRUETYPE_TAGS_H
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -386,7 +389,163 @@ extern "C" void ts_font_set_em(int em) {
   g_em = em;
 }
 
-bool XgfFont::load(const char *path) {
+static bool face_has_kana_kanji(FT_Face f) {
+  return f && FT_Get_Char_Index(f, 0x3042) != 0 && FT_Get_Char_Index(f, 0x4E00) != 0;
+}
+
+static int utf16be_to_utf8(const unsigned char *src, unsigned len, char *dst, int dst_n) {
+  unsigned i;
+  int o = 0;
+  if (dst_n < 1) {
+    return 0;
+  }
+  for (i = 0; i + 1 < len; i += 2) {
+    unsigned u = ((unsigned)src[i] << 8) | src[i + 1];
+    unsigned char tmp[4];
+    int n = 0;
+    int k;
+    if (u == 0) {
+      break;
+    }
+    if (u >= 0xD800u && u <= 0xDBFFu && i + 3 < len) {
+      unsigned lo = ((unsigned)src[i + 2] << 8) | src[i + 3];
+      if (lo >= 0xDC00u && lo <= 0xDFFFu) {
+        u = 0x10000u + (((u - 0xD800u) << 10) | (lo - 0xDC00u));
+        i += 2;
+      }
+    }
+    if (u < 0x80u) {
+      tmp[0] = (unsigned char)u;
+      n = 1;
+    } else if (u < 0x800u) {
+      tmp[0] = (unsigned char)(0xC0u | (u >> 6));
+      tmp[1] = (unsigned char)(0x80u | (u & 0x3Fu));
+      n = 2;
+    } else if (u < 0x10000u) {
+      tmp[0] = (unsigned char)(0xE0u | (u >> 12));
+      tmp[1] = (unsigned char)(0x80u | ((u >> 6) & 0x3Fu));
+      tmp[2] = (unsigned char)(0x80u | (u & 0x3Fu));
+      n = 3;
+    } else {
+      tmp[0] = (unsigned char)(0xF0u | (u >> 18));
+      tmp[1] = (unsigned char)(0x80u | ((u >> 12) & 0x3Fu));
+      tmp[2] = (unsigned char)(0x80u | ((u >> 6) & 0x3Fu));
+      tmp[3] = (unsigned char)(0x80u | (u & 0x3Fu));
+      n = 4;
+    }
+    if (o + n >= dst_n) {
+      break;
+    }
+    for (k = 0; k < n; k++) {
+      dst[o++] = (char)tmp[k];
+    }
+  }
+  dst[o] = '\0';
+  return o;
+}
+
+static int copy_sfnt(FT_Face face, unsigned name_id, unsigned lang, char *dst, int dst_n) {
+  FT_UInt count;
+  FT_UInt i;
+  dst[0] = '\0';
+  if (!face || dst_n < 1) {
+    return 0;
+  }
+  count = FT_Get_Sfnt_Name_Count(face);
+  for (i = 0; i < count; i++) {
+    FT_SfntName rec;
+    if (FT_Get_Sfnt_Name(face, i, &rec) != 0) {
+      continue;
+    }
+    if (rec.platform_id != 3 || rec.encoding_id != 1 || rec.name_id != name_id || rec.language_id != lang ||
+        !rec.string || rec.string_len < 2) {
+      continue;
+    }
+    return utf16be_to_utf8(rec.string, rec.string_len, dst, dst_n);
+  }
+  return 0;
+}
+
+static int plain_style(const char *style) {
+  char buf[16];
+  size_t i;
+  if (!style || !style[0]) {
+    return 1;
+  }
+  for (i = 0; style[i] && i + 1 < sizeof buf; i++) {
+    char c = style[i];
+    if (c >= 'A' && c <= 'Z') {
+      c = (char)(c - 'A' + 'a');
+    }
+    buf[i] = c;
+  }
+  buf[i] = '\0';
+  return strcmp(buf, "regular") == 0 || strcmp(buf, "normal") == 0 || strcmp(buf, "roman") == 0;
+}
+
+/* Japanese typographic names, then English, then the face's family and style. */
+static void face_label(FT_Face face, char *dst, int dst_n) {
+  char family[48];
+  char style[24];
+  const unsigned langs[] = {0x0411u, 0x0409u};
+  int li;
+  family[0] = '\0';
+  style[0] = '\0';
+  dst[0] = '\0';
+  if (!face || dst_n < 1) {
+    return;
+  }
+  for (li = 0; li < 2; li++) {
+    if (!family[0]) {
+      copy_sfnt(face, 16, langs[li], family, (int)sizeof family);
+    }
+    if (!style[0]) {
+      copy_sfnt(face, 17, langs[li], style, (int)sizeof style);
+    }
+  }
+  if (!family[0]) {
+    snprintf(family, sizeof family, "%s", face->family_name ? face->family_name : "");
+    snprintf(style, sizeof style, "%s", face->style_name ? face->style_name : "");
+  }
+  if (plain_style(style)) {
+    style[0] = '\0';
+  }
+  if (family[0] && style[0]) {
+    snprintf(dst, (size_t)dst_n, "%s %s", family, style);
+  } else if (family[0]) {
+    snprintf(dst, (size_t)dst_n, "%s", family);
+  } else {
+    snprintf(dst, (size_t)dst_n, "%s", style);
+  }
+}
+
+extern "C" int ts_font_faces(const char *path, int *indexes, char labels[][48], int cap) {
+  FT_Library lib = nullptr;
+  int n = 0;
+  int index;
+  if (!path || !path[0] || !indexes || !labels || cap < 1) {
+    return 0;
+  }
+  if (FT_Init_FreeType(&lib) != 0) {
+    return 0;
+  }
+  for (index = 0; index < 16 && n < cap; index++) {
+    FT_Face f = nullptr;
+    if (FT_New_Face(lib, path, index, &f) != 0) {
+      break;
+    }
+    if (face_has_kana_kanji(f)) {
+      indexes[n] = index;
+      face_label(f, labels[n], 48);
+      n++;
+    }
+    FT_Done_Face(f);
+  }
+  FT_Done_FreeType(lib);
+  return n;
+}
+
+bool XgfFont::load(const char *path, int faceIndex) {
   FT_Library lib = nullptr;
   int index;
   close();
@@ -399,13 +558,37 @@ bool XgfFont::load(const char *path) {
     return false;
   }
   library = lib;
-  for (index = 0; index < 8; index++) {
+  if (faceIndex >= 0) {
+    FT_Face f = nullptr;
+    if (FT_New_Face(lib, path, faceIndex, &f) != 0) {
+      error = "font missing";
+      close();
+      return false;
+    }
+    if (!face_has_kana_kanji(f)) {
+      FT_Done_Face(f);
+      error = "no japanese glyphs";
+      close();
+      return false;
+    }
+    face = f;
+    em = (uint8_t)g_em;
+    ruby = (uint8_t)(g_em / 2);
+    if (ruby < 8) {
+      ruby = 8;
+    }
+    FT_Set_Pixel_Sizes(f, 0, em);
+    loadVert();
+    error = "";
+    return true;
+  }
+  for (index = 0; index < 16; index++) {
     FT_Face f = nullptr;
     FT_Error err = FT_New_Face(lib, path, index, &f);
     if (err != 0) {
       break;
     }
-    if (FT_Get_Char_Index(f, 0x3042) != 0 && FT_Get_Char_Index(f, 0x4E00) != 0) {
+    if (face_has_kana_kanji(f)) {
       face = f;
       em = (uint8_t)g_em;
       ruby = (uint8_t)(g_em / 2);
@@ -509,7 +692,7 @@ int16_t XgfFont::advancePx(uint32_t cp, int px) {
   return (int16_t)w;
 }
 
-const XgfFont::Slot *XgfFont::slotFor(uint32_t gid, int px, bool rotate) {
+const XgfFont::Slot *XgfFont::slotFor(uint32_t gid, int px, bool rotate, bool bold) {
   FT_Face f = static_cast<FT_Face>(face);
   int i;
   Slot *slot = nullptr;
@@ -520,18 +703,30 @@ const XgfFont::Slot *XgfFont::slotFor(uint32_t gid, int px, bool rotate) {
   int y;
   int x;
   uint8_t *tight = nullptr;
+  const uint8_t key = (uint8_t)((bold ? 2 : 0) | (rotate ? 1 : 0));
   if (!f || gid == 0 || px < 1 || px > 128) {
     return nullptr;
   }
   for (i = 0; i < 256; i++) {
-    if (slots[i].taken && slots[i].gid == gid && slots[i].em == (uint16_t)px && slots[i].rot == (rotate ? 1 : 0)) {
+    if (slots[i].taken && slots[i].gid == gid && slots[i].em == (uint16_t)px && slots[i].rot == key) {
       return &slots[i];
     }
   }
   if (FT_Set_Pixel_Sizes(f, 0, (FT_UInt)px) != 0) {
     return nullptr;
   }
-  if (FT_Load_Glyph(f, gid, FT_LOAD_RENDER | FT_LOAD_TARGET_NORMAL) != 0) {
+  if (bold) {
+    if (FT_Load_Glyph(f, gid, FT_LOAD_NO_BITMAP | FT_LOAD_TARGET_NORMAL) != 0) {
+      return nullptr;
+    }
+    gs = f->glyph;
+    if (gs->format == FT_GLYPH_FORMAT_OUTLINE) {
+      (void)FT_Outline_Embolden(&gs->outline, (FT_Pos)px * 4);
+    }
+    if (FT_Render_Glyph(gs, FT_RENDER_MODE_NORMAL) != 0) {
+      return nullptr;
+    }
+  } else if (FT_Load_Glyph(f, gid, FT_LOAD_RENDER | FT_LOAD_TARGET_NORMAL) != 0) {
     return nullptr;
   }
   gs = f->glyph;
@@ -557,7 +752,7 @@ const XgfFont::Slot *XgfFont::slotFor(uint32_t gid, int px, bool rotate) {
   slot->taken = 1;
   slot->gid = gid;
   slot->em = (uint16_t)px;
-  slot->rot = rotate ? 1 : 0;
+  slot->rot = key;
   slot->left = (int16_t)gs->bitmap_left;
   slot->top = (int16_t)gs->bitmap_top;
   {
@@ -609,7 +804,7 @@ const XgfFont::Slot *XgfFont::slotFor(uint32_t gid, int px, bool rotate) {
 }
 
 bool XgfFont::drawGray(uint8_t *page, int pageW, int pageH, int x, int y, int cellW, int cellH, uint32_t cp, int px,
-                       bool vertical) {
+                       bool vertical, bool bold) {
   FT_Face f = static_cast<FT_Face>(face);
   FT_UInt gid;
   bool slide = false;
@@ -637,7 +832,7 @@ bool XgfFont::drawGray(uint8_t *page, int pageW, int pageH, int x, int y, int ce
   } else if (ts::kinsokuYakumono(cp)) {
     center = true;
   }
-  slot = slotFor(gid, px, rotate);
+  slot = slotFor(gid, px, rotate, bold);
   if (!slot || slot->bw < 1 || slot->bh < 1 || !slot->bits) {
     return slot != nullptr;
   }

@@ -8,9 +8,9 @@
 
 namespace ts {
 
-// IRA9. A chapter with no direction on the tag follows its linked stylesheet.
-// An older atom file is rebuilt, because the mode atom would stay wrong.
-constexpr uint32_t kAtomMagic = 0x39415249u;
+// IRAA. Character atoms carry bold and a size relative to the body em.
+// An older atom file is rebuilt, because those spans would stay at body weight.
+constexpr uint32_t kAtomMagic = 0x41415249u;
 
 class AtomWriter {
  public:

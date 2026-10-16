@@ -12,7 +12,8 @@ class XgfFont {
   XgfFont(const XgfFont &) = delete;
   XgfFont &operator=(const XgfFont &) = delete;
 
-  bool load(const char *path);
+  /* faceIndex < 0 uses the first face that has あ and 一. */
+  bool load(const char *path, int faceIndex);
   void close();
   bool loaded() const { return face != nullptr; }
   const char *lastError() const { return error; }
@@ -33,7 +34,7 @@ class XgfFont {
    * when the face has no vertical form. Body ink sits on the em. 約物 is
    * centered in the cell. 0 is paper, 255 is ink, and darker ink wins. */
   bool drawGray(uint8_t *page, int pageW, int pageH, int x, int y, int cellW, int cellH, uint32_t cp, int em,
-                bool vertical);
+                bool vertical, bool bold = false);
   /* Horizontal advance in pixels at `em`. 0 when the face has no glyph. */
   int16_t advancePx(uint32_t cp, int em);
 
@@ -65,7 +66,10 @@ class XgfFont {
   void loadVert();
   void clearVert();
   uint32_t vertOf(uint32_t gid) const;
-  const Slot *slotFor(uint32_t gid, int px, bool rotate);
+  const Slot *slotFor(uint32_t gid, int px, bool rotate, bool bold);
 };
 
 extern "C" void ts_font_set_em(int em);
+
+/* Faces that contain あ and 一. labels[i] is that face's name. */
+extern "C" int ts_font_faces(const char *path, int *indexes, char labels[][48], int cap);

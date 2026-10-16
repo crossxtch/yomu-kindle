@@ -61,6 +61,7 @@ KINDLE_SRCS := $(CORE_SRCS) \
 TS_CPPS := \
 	src/typeset/AtomFile.cpp \
 	src/typeset/Epub.cpp \
+	src/typeset/FaceCss.cpp \
 	src/typeset/FtFont.cpp \
 	src/typeset/HalPosix.cpp \
 	src/typeset/HtmlIR.cpp \

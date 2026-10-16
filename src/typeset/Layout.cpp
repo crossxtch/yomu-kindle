@@ -15,6 +15,21 @@ void copyRuby(GlyphRun& run, const uint32_t* ruby, const uint8_t rubyCount) {
   }
 }
 
+// 0 and 100 are the body em. Anything else is a percent of it, clamped to a pixel size.
+int16_t facePx(const LayoutOptions& opt, const uint8_t scale) {
+  if (scale == 0 || scale == 100 || opt.em < 1) {
+    return opt.em < 1 ? static_cast<int16_t>(1) : static_cast<int16_t>(opt.em);
+  }
+  int px = static_cast<int>(opt.em) * static_cast<int>(scale) / 100;
+  if (px < 1) {
+    px = 1;
+  }
+  if (px > 255) {
+    px = 255;
+  }
+  return static_cast<int16_t>(px);
+}
+
 }  // namespace
 
 void PageLayouter::begin(const LayoutOptions& options) {
@@ -83,8 +98,7 @@ bool PageLayouter::recomputeGrid() {
   return true;
 }
 
-int16_t PageLayouter::charAdvance(const uint32_t cp, const bool tcy) const {
-  const int16_t em = opt.em;
+int16_t PageLayouter::charAdvance(const uint32_t cp, const bool tcy, const int16_t em) const {
   const int16_t grid = kinsokuInlineAdvance(cp, em, tcy);
   if (tcy || opt.mode != WritingMode::HorizontalTb || grid < em || usesEmAdvance(cp) || !opt.measure) {
     return grid;
@@ -330,9 +344,10 @@ void PageLayouter::placePicture(const uint16_t id, const int pxW, const int pxH)
 }
 
 void PageLayouter::placeChar(const uint32_t cp, const uint32_t* ruby, const uint8_t rubyCount, const bool tcy,
-                             const uint8_t emphasis, const uint32_t* tcyCps, const uint8_t tcyN) {
-  const int16_t F = opt.em;
-  int16_t h = charAdvance(cp, tcy);
+                             const uint8_t emphasis, const uint32_t* tcyCps, const uint8_t tcyN, const uint8_t scale,
+                             const uint8_t bold) {
+  const int16_t F = facePx(opt, scale);
+  int16_t h = charAdvance(cp, tcy, F);
   const bool vert = opt.mode == WritingMode::VerticalRl;
   if (!vert && !tcy && ruby && rubyCount > 0) {
     const int16_t rubyW = static_cast<int16_t>(rubyCount * (F / 2 > 0 ? F / 2 : 1));
@@ -345,7 +360,10 @@ void PageLayouter::placeChar(const uint32_t cp, const uint32_t* ruby, const uint
     run.cp = cp;
     run.size = static_cast<uint16_t>(F);
     run.advance = static_cast<uint16_t>(h > 0 ? h : 0);
-    run.emphasis = emphasis;
+    run.emphasis = static_cast<uint8_t>(emphasis & kEmphasisMask);
+    if (bold) {
+      run.flags = static_cast<uint8_t>(run.flags | kRunBold);
+    }
     if (tcy && tcyCps && tcyN > 0) {
       copyRuby(run, tcyCps, tcyN);
       run.cp = tcyCps[0];
@@ -435,7 +453,9 @@ void PageLayouter::placeChar(const uint32_t cp, const uint32_t* ruby, const uint
 }
 
 void PageLayouter::placeGroup(const Atom& atom) {
-  const int16_t F = opt.em;
+  const int16_t F = facePx(opt, atom.startEm);
+  const bool bold = (atom.emphasis & kEmphasisBold) != 0;
+  const uint8_t mark = static_cast<uint8_t>(atom.emphasis & kEmphasisMask);
   const bool vert = opt.mode == WritingMode::VerticalRl;
   const uint8_t nBase = atom.tcyCount > kMaxCluster ? kMaxCluster : atom.tcyCount;
   if (nBase == 0) {
@@ -445,7 +465,7 @@ void PageLayouter::placeGroup(const Atom& atom) {
   int16_t advs[kMaxCluster]{};
   int16_t baseW = 0;
   for (uint8_t i = 0; i < nBase; ++i) {
-    advs[i] = charAdvance(atom.tcy[i], false);
+    advs[i] = charAdvance(atom.tcy[i], false, F);
     baseW = static_cast<int16_t>(baseW + advs[i]);
   }
   const int16_t rubyUnit = static_cast<int16_t>(F / 2);
@@ -492,7 +512,10 @@ void PageLayouter::placeGroup(const Atom& atom) {
     run.cp = atom.tcy[i];
     run.size = static_cast<uint16_t>(F);
     run.advance = static_cast<uint16_t>(advs[i] > 0 ? advs[i] : 0);
-    run.emphasis = atom.emphasis;
+    run.emphasis = mark;
+    if (bold) {
+      run.flags = static_cast<uint8_t>(run.flags | kRunBold);
+    }
     if (i == 0) {
       copyRuby(run, atom.ruby, nRuby);
       run.rubyLead = static_cast<uint8_t>(lead > 255 ? 255 : lead);
@@ -644,15 +667,18 @@ bool PageLayouter::feed(const Atom& atom, const uint32_t atomPos) {
     case AtomKind::Tcy:
       if (opt.mode == WritingMode::HorizontalTb) {
         // 横書き: an unbreakable upright run at the face advance, not a squeezed em.
+        const int16_t F = facePx(opt, atom.startEm);
+        const bool bold = (atom.emphasis & kEmphasisBold) != 0;
+        const uint8_t mark = static_cast<uint8_t>(atom.emphasis & kEmphasisMask);
         const uint8_t n = atom.tcyCount > kMaxCluster ? kMaxCluster : (atom.tcyCount > 0 ? atom.tcyCount : 1);
         uint32_t cps[kMaxCluster]{};
         int16_t widths[kMaxCluster]{};
         int need = 0;
         for (uint8_t i = 0; i < n; ++i) {
           cps[i] = atom.tcyCount > 0 ? atom.tcy[i] : atom.cp;
-          widths[i] = charAdvance(cps[i], false);
+          widths[i] = charAdvance(cps[i], false, F);
           if (widths[i] < 1) {
-            widths[i] = opt.em;
+            widths[i] = F;
           }
           need += widths[i];
         }
@@ -665,12 +691,15 @@ bool PageLayouter::feed(const Atom& atom, const uint32_t atomPos) {
         for (uint8_t i = 0; i < n; ++i) {
           GlyphRun run{};
           run.cp = cps[i];
-          run.size = static_cast<uint16_t>(opt.em);
+          run.size = static_cast<uint16_t>(F);
           run.advance = static_cast<uint16_t>(widths[i]);
-          run.emphasis = atom.emphasis;
+          run.emphasis = mark;
           run.x = x;
           run.y = glyphY();
           run.flags = kRunRubyAbove;
+          if (bold) {
+            run.flags = static_cast<uint8_t>(run.flags | kRunBold);
+          }
           if (i > 0) {
             run.flags = static_cast<uint8_t>(run.flags | kRunSticky);
           }
@@ -680,7 +709,8 @@ bool PageLayouter::feed(const Atom& atom, const uint32_t atomPos) {
       } else {
         const uint8_t n = atom.tcyCount > kMaxCluster ? kMaxCluster : (atom.tcyCount > 0 ? atom.tcyCount : 1);
         const uint32_t* cps = atom.tcyCount > 0 ? atom.tcy : &atom.cp;
-        placeChar(atom.cp, nullptr, 0, true, atom.emphasis, cps, n);
+        placeChar(atom.cp, nullptr, 0, true, static_cast<uint8_t>(atom.emphasis & kEmphasisMask), cps, n, atom.startEm,
+                  (atom.emphasis & kEmphasisBold) != 0);
       }
       lastAtomPos = atomPos;
       break;
@@ -689,7 +719,8 @@ bool PageLayouter::feed(const Atom& atom, const uint32_t atomPos) {
       lastAtomPos = atomPos;
       break;
     case AtomKind::Ch:
-      placeChar(atom.cp, atom.ruby, atom.rubyCount, false, atom.emphasis, nullptr, 0);
+      placeChar(atom.cp, atom.ruby, atom.rubyCount, false, static_cast<uint8_t>(atom.emphasis & kEmphasisMask), nullptr,
+                0, atom.startEm, (atom.emphasis & kEmphasisBold) != 0);
       lastAtomPos = atomPos;
       break;
   }
