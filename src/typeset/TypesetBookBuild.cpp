@@ -249,7 +249,7 @@ bool TypesetBook::loadCursor() {
     return false;
   }
   title[titleLen] = 0;
-  if (f.read(&n, 2) != 2 || n > 512) {
+  if (f.read(&n, 2) != 2 || n > ts::EpubBook::kMaxSpine) {
     return false;
   }
   if (bookSrcSize != 0 && src != bookSrcSize) {
@@ -302,7 +302,8 @@ bool TypesetBook::saveCursor() const {
   if (titleLen > 127) {
     titleLen = 127;
   }
-  const uint16_t n = static_cast<uint16_t>(chapterMarks.size() > 512 ? 512 : chapterMarks.size());
+  const uint16_t n = static_cast<uint16_t>(
+      chapterMarks.size() > ts::EpubBook::kMaxSpine ? ts::EpubBook::kMaxSpine : chapterMarks.size());
   if (f.write(&magic, 4) != 4 || f.write(&src, 4) != 4 || f.write(&nSp, 2) != 2 || f.write(&next, 2) != 2 ||
       f.write(&bytes, 4) != 4 || f.write(&mode, 2) != 2 || f.write(&titleLen, 1) != 1) {
     return false;
@@ -1206,7 +1207,7 @@ bool TypesetBook::ensureChapter(const uint16_t chapterIndex, uint32_t& globalPag
     progressCtx = hookCtx;
   }
   int guard = 0;
-  while (chapterMarks[chapterIndex].atomOff == 0xFFFFFFFFu && !ingestDone && guard < 512) {
+  while (chapterMarks[chapterIndex].atomOff == 0xFFFFFFFFu && !ingestDone && guard < ts::EpubBook::kMaxSpine) {
     const uint16_t sp = chapterMarks[chapterIndex].spine;
     if (sp != 0xFFFFu && nextSpine > sp) {
       break;

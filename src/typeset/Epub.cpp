@@ -1098,8 +1098,9 @@ bool EpubBook::parseOpf(bool (*rewind)(void*, HtmlSax*), void* ctx, const char* 
     return false;
   }
 
-  // The spine block is taken first so the smaller id table sits at the tail.
-  // Freeing the ids then leaves one hole big enough for the 32KB deflate window.
+  // The spine block is taken first so the id table (kMaxSpine * 40 bytes)
+  // sits at the tail. Freeing the ids then leaves one hole big enough for
+  // the 32KB deflate window.
   items = static_cast<Spine*>(calloc(kMaxSpine, sizeof(Spine)));
   auto* spineIds = static_cast<char(*)[40]>(calloc(kMaxSpine, 40));
   if (!items || !spineIds) {

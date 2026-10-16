@@ -13,10 +13,11 @@ class HtmlSax;
 
 class EpubBook {
  public:
-  // Spine slots kept for one ingest. A combined series can list several hundred
-  // files. Each slot stays small so a 32KB deflate window still fits beside the
-  // zip table (the previous 212-byte slot left only a 26KB hole).
-  static constexpr uint16_t kMaxSpine = 512;
+  // Spine slots kept for one ingest. A combined series can list a couple of
+  // thousand files. Each slot stays small. The id table is allocated after
+  // the slots and freed before inflate, so that free block holds the 32KB
+  // deflate window.
+  static constexpr uint16_t kMaxSpine = 2048;
 
   EpubBook() = default;
   ~EpubBook() { close(); }

@@ -502,7 +502,7 @@ bool TypesetBook::loadChapterSidecar() {
   }
   uint32_t magic = 0;
   uint16_t n = 0;
-  if (f.read(&magic, 4) != 4 || magic != 0x33544843u || f.read(&n, 2) != 2 || n > 512) {
+  if (f.read(&magic, 4) != 4 || magic != 0x33544843u || f.read(&n, 2) != 2 || n > ts::EpubBook::kMaxSpine) {
     return false;
   }
   chapterMarks.clear();

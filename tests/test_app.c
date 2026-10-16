@@ -855,14 +855,19 @@ static int write_stored_parts(const char *path, const struct ZipEnt *ents, int c
   FILE *fp;
   uint32_t off = 0;
   uint32_t cd;
-  uint32_t locals[8];
+  uint32_t *locals;
   uint8_t end[22];
   int i;
-  if (!path || !ents || count < 1 || count > 8) {
+  if (!path || !ents || count < 1 || count > 4096) {
+    return -1;
+  }
+  locals = malloc((size_t)count * sizeof(*locals));
+  if (!locals) {
     return -1;
   }
   fp = fopen(path, "wb");
   if (!fp) {
+    free(locals);
     return -1;
   }
   for (i = 0; i < count; i++) {
@@ -880,6 +885,7 @@ static int write_stored_parts(const char *path, const struct ZipEnt *ents, int c
   wr32(end + 16, cd);
   zip_put(fp, end, sizeof end, &off);
   fclose(fp);
+  free(locals);
   return 0;
 }
 
@@ -1635,12 +1641,133 @@ static void test_writing_mode(void) {
   free(page);
 }
 
+/* 520 files, past the old 512 slot table. Each file is one short paragraph. */
+static void test_long_spine(void) {
+  const int n = 520;
+  const char *container =
+      "<?xml version=\"1.0\"?>"
+      "<container version=\"1.0\" xmlns=\"urn:oasis:names:tc:opendocument:xmlns:container\">"
+      "<rootfiles>"
+      "<rootfile full-path=\"OEBPS/content.opf\" media-type=\"application/oebps-package+xml\"/>"
+      "</rootfiles>"
+      "</container>";
+  const char *xhtml =
+      "<?xml version=\"1.0\"?>"
+      "<html xmlns=\"http://www.w3.org/1999/xhtml\"><body><p>A</p></body></html>";
+  char dir[] = "/tmp/yomu-spine-XXXXXX";
+  char path[256];
+  char *opf;
+  char *names;
+  char *p;
+  char *end;
+  struct ZipEnt *ents;
+  int i;
+  int wrote;
+  int done = 0;
+  int total = 0;
+  int guard;
+  int page = 0;
+  TsBook *book;
+  const size_t opf_cap = 96 * 1024;
+
+  expect(mkdtemp(dir) != NULL, "long spine dir");
+  opf = malloc(opf_cap);
+  names = calloc((size_t)n, 32);
+  ents = calloc((size_t)n + 2, sizeof(*ents));
+  expect(opf != NULL && names != NULL && ents != NULL, "long spine buffers");
+  if (!opf || !names || !ents) {
+    free(opf);
+    free(names);
+    free(ents);
+    return;
+  }
+
+  p = opf;
+  end = opf + opf_cap;
+  wrote = snprintf(p, (size_t)(end - p),
+                   "<?xml version=\"1.0\"?><package>"
+                   "<metadata xmlns:dc=\"http://purl.org/dc/elements/1.1/\">"
+                   "<dc:title>Long</dc:title></metadata><manifest>");
+  expect(wrote > 0 && p + wrote < end, "opf head fits");
+  if (wrote > 0 && p + wrote < end) {
+    p += wrote;
+  }
+  for (i = 0; i < n; i++) {
+    if (p >= end) {
+      break;
+    }
+    wrote = snprintf(p, (size_t)(end - p),
+                     "<item id=\"c%04d\" href=\"c%04d.xhtml\" media-type=\"application/xhtml+xml\"/>", i, i);
+    if (wrote < 0 || p + wrote >= end) {
+      break;
+    }
+    p += wrote;
+    snprintf(names + (size_t)i * 32, 32, "OEBPS/c%04d.xhtml", i);
+  }
+  expect(i == n, "opf manifest fits");
+  if (i == n && p < end) {
+    wrote = snprintf(p, (size_t)(end - p), "</manifest><spine>");
+    if (wrote > 0 && p + wrote < end) {
+      p += wrote;
+    }
+  }
+  for (i = 0; i < n && p < end; i++) {
+    wrote = snprintf(p, (size_t)(end - p), "<itemref idref=\"c%04d\"/>", i);
+    if (wrote < 0 || p + wrote >= end) {
+      break;
+    }
+    p += wrote;
+  }
+  expect(i == n, "opf spine fits");
+  if (i == n && p < end) {
+    wrote = snprintf(p, (size_t)(end - p), "</spine></package>");
+    expect(wrote > 0 && p + wrote < end, "opf tail fits");
+  }
+
+  ents[0].name = "META-INF/container.xml";
+  ents[0].data = container;
+  ents[0].len = (uint32_t)strlen(container);
+  ents[1].name = "OEBPS/content.opf";
+  ents[1].data = opf;
+  ents[1].len = (uint32_t)strlen(opf);
+  for (i = 0; i < n; i++) {
+    ents[i + 2].name = names + (size_t)i * 32;
+    ents[i + 2].data = xhtml;
+    ents[i + 2].len = (uint32_t)strlen(xhtml);
+  }
+  snprintf(path, sizeof path, "%s/long.epub", dir);
+  expect(write_stored_parts(path, ents, n + 2) == 0, "write long spine epub");
+  book = ts_open(path, dir, NULL, 240, 240);
+  expect(book != NULL, "long spine opens");
+  if (book) {
+    expect(ts_spine(book, &done, &total) == 1 && total == n, "spine longer than 512 is kept");
+    guard = 0;
+    while (!ts_done(book) && guard < n + 32) {
+      if (!ts_index_step(book) && !ts_done(book)) {
+        break;
+      }
+      guard++;
+    }
+    expect(ts_spine(book, &done, &total) == 1 && done == n && total == n, "every spine file is ingested");
+    expect(ts_done(book) == 1, "long spine finishes");
+    expect(ts_pages(book) > 512, "pages pass the old cap");
+    expect(ts_pages(book) >= n, "each file has a page");
+    expect(ts_chapter_count(book) == n, "each file is a chapter");
+    expect(ts_open_chapter(book, n - 1, &page) == 1 && page > 512, "the last file opens");
+    ts_close(book);
+  }
+  free(opf);
+  free(names);
+  free(ents);
+}
+
 int main(void) {
   test_rotate();
   test_progress_and_scan();
   test_japanese();
   test_typeset();
   test_writing_mode();
+  test_long_spine();
   test_ui();
   test_reader_gestures();
   test_sleep_stays();
