@@ -649,7 +649,7 @@ bool TypesetBook::atomCacheFresh() const {
     HalFile atom;
     uint32_t magic = 0;
     if (!Storage.openFileForRead("TS", atomPath, atom) || atom.read(&magic, 4) != 4 || magic != ts::kAtomMagic) {
-      return false;  // older atom file; the stream changed
+      return false;  // IRA8 and older; chapter direction may be wrong
     }
   }
   // A cache-clear used to leave a file of page-breaks, about one byte each.

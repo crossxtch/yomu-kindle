@@ -37,6 +37,8 @@ class EpubBook {
   const char* title() const { return bookTitle; }
   const char* author() const { return bookAuthor; }
   WritingMode bookMode() const { return mode; }
+  // Later slices of a book already known to be vertical. Survives open()'s close().
+  void preferVertical() { verticalPreferred = true; }
   uint16_t spineCount() const { return nSpine; }
   // One past the last spine this open() walked. Equals spineCount() when the file is finished.
   uint16_t ingestedEnd() const { return sliceEnd; }
@@ -83,6 +85,7 @@ class EpubBook {
   WritingMode mode = WritingMode::VerticalRl;
   uint16_t sliceEnd = 0;
   const char* error = "closed";
+  bool verticalPreferred = false;
 
   bool parseContainer(char* opfName, size_t cap);
   // `rewind` rebinds `sax` to the start of the OPF (memory or a work file).

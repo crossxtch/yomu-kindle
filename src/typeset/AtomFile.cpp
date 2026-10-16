@@ -66,6 +66,7 @@ bool AtomWriter::open(const char* path) {
       return false;
     }
   }
+  // IRA9. A mismatch rebuilds the file so chapter direction is parsed again.
   if (!writeU32(file, kAtomMagic)) {
     close();
     return false;

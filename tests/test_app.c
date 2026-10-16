@@ -138,6 +138,36 @@ static int ink_count(const uint8_t *p, int n) {
   return c;
 }
 
+static void ink_box(const uint8_t *p, int w, int h, int *bw, int *bh) {
+  int min_x = w;
+  int min_y = h;
+  int max_x = -1;
+  int max_y = -1;
+  int y;
+  int x;
+  for (y = 0; y < h; y++) {
+    for (x = 0; x < w; x++) {
+      if (p[(size_t)y * (size_t)w + (size_t)x] >= 250) {
+        continue;
+      }
+      if (x < min_x) {
+        min_x = x;
+      }
+      if (y < min_y) {
+        min_y = y;
+      }
+      if (x > max_x) {
+        max_x = x;
+      }
+      if (y > max_y) {
+        max_y = y;
+      }
+    }
+  }
+  *bw = max_x >= min_x ? max_x - min_x + 1 : 0;
+  *bh = max_y >= min_y ? max_y - min_y + 1 : 0;
+}
+
 static void test_japanese(void) {
   char dir[] = "/tmp/yomu-jp-XXXXXX";
   const char *kana = "\xe3\x81\x82";
@@ -1470,11 +1500,147 @@ static void test_type(void) {
   rmdir(dir);
 }
 
+/* Package meta says horizontal. The body class in the stylesheet is vertical.
+ * An hltr tag stays horizontal. A later untitled chapter stays vertical. */
+static void test_writing_mode(void) {
+  const char *container =
+      "<?xml version=\"1.0\"?>"
+      "<container version=\"1.0\" xmlns=\"urn:oasis:names:tc:opendocument:xmlns:container\">"
+      "<rootfiles>"
+      "<rootfile full-path=\"OEBPS/content.opf\" media-type=\"application/oebps-package+xml\"/>"
+      "</rootfiles>"
+      "</container>";
+  const char *css =
+      "/* writing-mode: horizontal-tb; */\n"
+      ".vrtl { writing-mode: horizontal-tb; }\n"
+      ".calibre2 { writing-mode: horizontal-tb; }\n"
+      "@media amzn-kf8 {\n"
+      "  .calibre { -webkit-writing-mode: vertical-rl; writing-mode: vertical-rl; }\n"
+      "}\n"
+      ".other { writing-mode: horizontal-tb; }\n";
+  const char *opf_css =
+      "<?xml version=\"1.0\"?>"
+      "<package>"
+      "<metadata xmlns:dc=\"http://purl.org/dc/elements/1.1/\">"
+      "<dc:title>方向</dc:title>"
+      "<meta name=\"primary-writing-mode\" content=\"horizontal-lr\"/>"
+      "</metadata>"
+      "<manifest>"
+      "<item id=\"c1\" href=\"chap.xhtml\" media-type=\"application/xhtml+xml\"/>"
+      "<item id=\"css\" href=\"stylesheet.css\" media-type=\"text/css\"/>"
+      "</manifest>"
+      "<spine><itemref idref=\"c1\"/></spine>"
+      "</package>";
+  const char *opf_two =
+      "<?xml version=\"1.0\"?>"
+      "<package>"
+      "<metadata xmlns:dc=\"http://purl.org/dc/elements/1.1/\">"
+      "<dc:title>方向</dc:title>"
+      "<meta name=\"primary-writing-mode\" content=\"horizontal-lr\"/>"
+      "</metadata>"
+      "<manifest>"
+      "<item id=\"c1\" href=\"chap.xhtml\" media-type=\"application/xhtml+xml\"/>"
+      "<item id=\"c2\" href=\"chap2.xhtml\" media-type=\"application/xhtml+xml\"/>"
+      "<item id=\"css\" href=\"stylesheet.css\" media-type=\"text/css\"/>"
+      "</manifest>"
+      "<spine><itemref idref=\"c1\"/><itemref idref=\"c2\"/></spine>"
+      "</package>";
+  const char *vertical_xhtml =
+      "<?xml version=\"1.0\"?>"
+      "<html xmlns=\"http://www.w3.org/1999/xhtml\">"
+      "<head><link rel=\"stylesheet\" type=\"text/css\" href=\"stylesheet.css\"/></head>"
+      "<body class=\"calibre\"><p>あいう</p></body></html>";
+  const char *horizontal_xhtml =
+      "<?xml version=\"1.0\"?>"
+      "<html xmlns=\"http://www.w3.org/1999/xhtml\" class=\"hltr\">"
+      "<head><link rel=\"stylesheet\" type=\"text/css\" href=\"stylesheet.css\"/></head>"
+      "<body class=\"calibre\"><p>あいう</p></body></html>";
+  const char *bare_xhtml =
+      "<?xml version=\"1.0\"?>"
+      "<html xmlns=\"http://www.w3.org/1999/xhtml\"><body><p>あいう</p></body></html>";
+  char dir[] = "/tmp/yomu-mode-XXXXXX";
+  char path[256];
+  const int w = 240;
+  const int h = 240;
+  uint8_t *page;
+  int bw;
+  int bh;
+  int guard;
+  struct ZipEnt ents[5];
+  TsBook *book;
+
+  expect(mkdtemp(dir) != NULL, "writing mode dir");
+  page = malloc((size_t)w * (size_t)h);
+  expect(page != NULL, "writing mode page");
+  if (!page) {
+    return;
+  }
+
+  snprintf(path, sizeof path, "%s/vertical.epub", dir);
+  ents[0].name = "META-INF/container.xml";
+  ents[0].data = container;
+  ents[0].len = (uint32_t)strlen(container);
+  ents[1].name = "OEBPS/content.opf";
+  ents[1].data = opf_two;
+  ents[1].len = (uint32_t)strlen(opf_two);
+  ents[2].name = "OEBPS/stylesheet.css";
+  ents[2].data = css;
+  ents[2].len = (uint32_t)strlen(css);
+  ents[3].name = "OEBPS/chap.xhtml";
+  ents[3].data = vertical_xhtml;
+  ents[3].len = (uint32_t)strlen(vertical_xhtml);
+  ents[4].name = "OEBPS/chap2.xhtml";
+  ents[4].data = bare_xhtml;
+  ents[4].len = (uint32_t)strlen(bare_xhtml);
+  expect(write_stored_parts(path, ents, 5) == 0, "write vertical css epub");
+  book = ts_open(path, dir, NULL, w, h);
+  expect(book != NULL, ts_error(NULL));
+  if (book) {
+    expect(ts_rtl(book) == 1, "stylesheet class is vertical");
+    memset(page, 255, (size_t)w * (size_t)h);
+    expect(ts_render(book, 0, page, w, h) == 1, "render stylesheet chapter");
+    ink_box(page, w, h, &bw, &bh);
+    expect(bw > 0 && bh > bw, "stylesheet chapter runs down the column");
+    guard = 0;
+    while (ts_done(book) != 1 && guard < 40) {
+      ts_index_step(book);
+      guard++;
+    }
+    expect(ts_done(book) == 1, "stylesheet book finished");
+    expect(ts_rtl(book) == 1, "a later chapter stays vertical");
+    expect(ts_pages(book) >= 2, "untitled chapter has a page");
+    memset(page, 255, (size_t)w * (size_t)h);
+    expect(ts_render(book, ts_pages(book) - 1, page, w, h) == 1, "render untitled chapter");
+    ink_box(page, w, h, &bw, &bh);
+    expect(bw > 0 && bh > bw, "untitled chapter stays in the column");
+    ts_close(book);
+  }
+
+  snprintf(path, sizeof path, "%s/horizontal.epub", dir);
+  ents[1].data = opf_css;
+  ents[1].len = (uint32_t)strlen(opf_css);
+  ents[3].data = horizontal_xhtml;
+  ents[3].len = (uint32_t)strlen(horizontal_xhtml);
+  expect(write_stored_parts(path, ents, 4) == 0, "write hltr epub");
+  book = ts_open(path, dir, NULL, w, h);
+  expect(book != NULL, ts_error(NULL));
+  if (book) {
+    expect(ts_rtl(book) == 0, "hltr tag stays horizontal");
+    memset(page, 255, (size_t)w * (size_t)h);
+    expect(ts_render(book, 0, page, w, h) == 1, "render hltr chapter");
+    ink_box(page, w, h, &bw, &bh);
+    expect(bh > 0 && bw > bh, "hltr chapter runs along the line");
+    ts_close(book);
+  }
+  free(page);
+}
+
 int main(void) {
   test_rotate();
   test_progress_and_scan();
   test_japanese();
   test_typeset();
+  test_writing_mode();
   test_ui();
   test_reader_gestures();
   test_sleep_stays();

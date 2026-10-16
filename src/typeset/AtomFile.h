@@ -8,8 +8,9 @@
 
 namespace ts {
 
-// IRA8. Contents entries are their own columns. An older atom file is rebuilt.
-constexpr uint32_t kAtomMagic = 0x38415249u;
+// IRA9. A chapter with no direction on the tag follows its linked stylesheet.
+// An older atom file is rebuilt, because the mode atom would stay wrong.
+constexpr uint32_t kAtomMagic = 0x39415249u;
 
 class AtomWriter {
  public:

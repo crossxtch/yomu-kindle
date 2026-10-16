@@ -289,6 +289,423 @@ bool openMember(ZipArchive& zip, const ZipArchive::Entry& ent, const char* workP
   return true;
 }
 
+constexpr size_t kModeSample = 16384;
+constexpr uint32_t kMaxCssBytes = 65536;
+constexpr int kMaxModeClasses = 8;
+constexpr int kMaxCssLinks = 4;
+
+struct ModeClasses {
+  char name[kMaxModeClasses][32]{};
+  int n = 0;
+};
+
+bool modeSpace(const char c) { return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f'; }
+
+bool classListed(const ModeClasses& set, const char* s, const size_t n) {
+  for (int i = 0; i < set.n; ++i) {
+    if (strlen(set.name[i]) == n && memcmp(set.name[i], s, n) == 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
+void addModeClass(ModeClasses& set, const char* s, const size_t n) {
+  if (n == 0 || n >= sizeof(set.name[0]) || set.n >= kMaxModeClasses) {
+    return;
+  }
+  memcpy(set.name[set.n], s, n);
+  set.name[set.n][n] = 0;
+  ++set.n;
+}
+
+void splitModeClasses(ModeClasses& set, const char* s, size_t n) {
+  size_t i = 0;
+  while (i < n) {
+    while (i < n && modeSpace(s[i])) {
+      ++i;
+    }
+    const size_t b = i;
+    while (i < n && !modeSpace(s[i])) {
+      ++i;
+    }
+    addModeClass(set, s + b, i - b);
+  }
+}
+
+bool tagAt(const char* html, const size_t n, const size_t i, const char* tag) {
+  const size_t tn = strlen(tag);
+  if (i + 1 + tn >= n || html[i] != '<') {
+    return false;
+  }
+  if (memcmp(html + i + 1, tag, tn) != 0) {
+    return false;
+  }
+  const char after = html[i + 1 + tn];
+  return after == ' ' || after == '\t' || after == '\n' || after == '\r' || after == '>' || after == '/';
+}
+
+bool attrInTag(const char* tag, const size_t n, const char* key, const char** val, size_t* valN) {
+  const size_t kn = strlen(key);
+  for (size_t i = 0; i + kn + 2 < n; ++i) {
+    if ((i > 0 && !modeSpace(tag[i - 1])) || memcmp(tag + i, key, kn) != 0 || tag[i + kn] != '=') {
+      continue;
+    }
+    size_t j = i + kn + 1;
+    if (j >= n) {
+      return false;
+    }
+    const char q = tag[j];
+    if (q != '"' && q != '\'') {
+      continue;
+    }
+    ++j;
+    size_t e = j;
+    while (e < n && tag[e] != q) {
+      ++e;
+    }
+    *val = tag + j;
+    *valN = e - j;
+    return true;
+  }
+  return false;
+}
+
+void classesOnTag(const char* html, const size_t n, const char* tagName, ModeClasses& out) {
+  const size_t cap = n < kModeSample ? n : kModeSample;
+  for (size_t i = 0; i < cap; ++i) {
+    if (!tagAt(html, cap, i, tagName)) {
+      continue;
+    }
+    size_t end = i + 1;
+    while (end < cap && html[end] != '>') {
+      ++end;
+    }
+    const char* val = nullptr;
+    size_t valN = 0;
+    if (attrInTag(html + i, end - i, "class", &val, &valN)) {
+      splitModeClasses(out, val, valN);
+    }
+    return;
+  }
+}
+
+bool endsWithCss(const char* s) {
+  const size_t n = strlen(s);
+  return n >= 4 && (memcmp(s + n - 4, ".css", 4) == 0 || memcmp(s + n - 4, ".CSS", 4) == 0);
+}
+
+void collectCssHrefs(const char* html, const size_t n, char hrefs[][96], int& count) {
+  const size_t cap = n < kModeSample ? n : kModeSample;
+  count = 0;
+  for (size_t i = 0; i < cap && count < kMaxCssLinks; ++i) {
+    if (!tagAt(html, cap, i, "link")) {
+      continue;
+    }
+    size_t end = i + 1;
+    while (end < cap && html[end] != '>') {
+      ++end;
+    }
+    const char* val = nullptr;
+    size_t valN = 0;
+    if (!attrInTag(html + i, end - i, "href", &val, &valN) || valN == 0 || valN >= 96) {
+      continue;
+    }
+    char href[96];
+    memcpy(href, val, valN);
+    href[valN] = 0;
+    if (char* q = strchr(href, '?')) {
+      *q = 0;
+    }
+    if (char* h = strchr(href, '#')) {
+      *h = 0;
+    }
+    if (!endsWithCss(href)) {
+      continue;
+    }
+    snprintf(hrefs[count], 96, "%s", href);
+    ++count;
+  }
+}
+
+const ZipArchive::Entry* findCss(ZipArchive& zip, const char* chapterDir, const char* href) {
+  char rel[96];
+  snprintf(rel, sizeof(rel), "%s", href ? href : "");
+  if (char* q = strchr(rel, '?')) {
+    *q = 0;
+  }
+  if (rel[0] == 0) {
+    return nullptr;
+  }
+  char full[160];
+  joinImagePath(full, sizeof(full), chapterDir, rel);
+  const ZipArchive::Entry* ent = zip.find(full);
+  if (!ent) {
+    ent = zip.find(rel);
+  }
+  if (!ent) {
+    const char* base = strrchr(full[0] ? full : rel, '/');
+    base = base ? base + 1 : (full[0] ? full : rel);
+    if (base[0]) {
+      ent = zip.findSuffix(base);
+    }
+  }
+  return ent;
+}
+
+bool cssValueMode(const char* s, const size_t n, WritingMode& mode) {
+  char buf[32];
+  if (n == 0 || n >= sizeof(buf)) {
+    return false;
+  }
+  for (size_t i = 0; i < n; ++i) {
+    char c = s[i];
+    if (c >= 'A' && c <= 'Z') {
+      c = static_cast<char>(c - 'A' + 'a');
+    }
+    buf[i] = c;
+  }
+  buf[n] = 0;
+  if (strcmp(buf, "horizontal-tb") == 0 || strcmp(buf, "lr-tb") == 0 || strcmp(buf, "rl-tb") == 0) {
+    mode = WritingMode::HorizontalTb;
+    return true;
+  }
+  if (strcmp(buf, "vertical-rl") == 0 || strcmp(buf, "vertical-lr") == 0 || strcmp(buf, "tb-rl") == 0) {
+    mode = WritingMode::VerticalRl;
+    return true;
+  }
+  return false;
+}
+
+bool classesMatch(const ModeClasses& need, const ModeClasses& have) {
+  for (int i = 0; i < need.n; ++i) {
+    if (!classListed(have, need.name[i], strlen(need.name[i]))) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool selectorPartMatches(const char* s, size_t n, const ModeClasses& htmlC, const ModeClasses& bodyC, int& score) {
+  while (n && modeSpace(*s)) {
+    ++s;
+    --n;
+  }
+  while (n && modeSpace(s[n - 1])) {
+    --n;
+  }
+  if (n == 0) {
+    return false;
+  }
+  for (size_t i = 0; i < n; ++i) {
+    const char c = s[i];
+    if (c == '>' || c == '+' || c == '~' || c == '#' || c == '[' || c == ':' || c == '*' || modeSpace(c)) {
+      return false;
+    }
+  }
+  enum { Any, Html, Body, Other } el = Any;
+  size_t i = 0;
+  if (s[0] != '.') {
+    while (i < n && s[i] != '.') {
+      ++i;
+    }
+    if (i == 4 && memcmp(s, "html", 4) == 0) {
+      el = Html;
+    } else if (i == 4 && memcmp(s, "body", 4) == 0) {
+      el = Body;
+    } else {
+      el = Other;
+    }
+  }
+  if (el == Other) {
+    return false;
+  }
+  ModeClasses need{};
+  while (i < n) {
+    if (s[i] != '.') {
+      return false;
+    }
+    ++i;
+    const size_t b = i;
+    while (i < n && s[i] != '.') {
+      ++i;
+    }
+    addModeClass(need, s + b, i - b);
+    if (need.n == 0 || strlen(need.name[need.n - 1]) != i - b) {
+      return false;
+    }
+  }
+  if (el == Any && need.n == 0) {
+    return false;
+  }
+  bool ok = false;
+  if (el == Html) {
+    ok = classesMatch(need, htmlC);
+  } else if (el == Body) {
+    ok = classesMatch(need, bodyC);
+  } else {
+    ok = need.n > 0 && (classesMatch(need, htmlC) || classesMatch(need, bodyC));
+  }
+  if (!ok) {
+    return false;
+  }
+  score = need.n * 10 + (el == Any ? 0 : 1);
+  return score > 0;
+}
+
+void applySelector(const char* sel, const size_t n, const WritingMode value, const ModeClasses& htmlC,
+                   const ModeClasses& bodyC, int& best, WritingMode& picked, bool& found) {
+  size_t start = 0;
+  for (size_t i = 0; i <= n; ++i) {
+    if (i < n && sel[i] != ',') {
+      continue;
+    }
+    int score = 0;
+    if (selectorPartMatches(sel + start, i - start, htmlC, bodyC, score) && score >= best) {
+      best = score;
+      picked = value;
+      found = true;
+    }
+    start = i + 1;
+  }
+}
+
+void blankCssComments(char* s, const size_t n) {
+  for (size_t i = 0; i + 1 < n; ++i) {
+    if (s[i] != '/' || s[i + 1] != '*') {
+      continue;
+    }
+    size_t j = i + 2;
+    while (j + 1 < n && !(s[j] == '*' && s[j + 1] == '/')) {
+      ++j;
+    }
+    if (j + 1 < n) {
+      j += 2;
+    } else {
+      j = n;
+    }
+    for (size_t k = i; k < j; ++k) {
+      s[k] = ' ';
+    }
+    i = j > 0 ? j - 1 : 0;
+  }
+}
+
+void scanCssMode(char* css, const size_t n, const ModeClasses& htmlC, const ModeClasses& bodyC, int& best,
+                 WritingMode& picked, bool& found) {
+  blankCssComments(css, n);
+  const char key[] = "writing-mode";
+  const size_t kn = sizeof(key) - 1;
+  for (size_t i = 0; i + kn <= n; ++i) {
+    bool name = true;
+    for (size_t k = 0; k < kn; ++k) {
+      char c = css[i + k];
+      if (c >= 'A' && c <= 'Z') {
+        c = static_cast<char>(c - 'A' + 'a');
+      }
+      if (c != key[k]) {
+        name = false;
+        break;
+      }
+    }
+    if (!name) {
+      continue;
+    }
+    if (i > 0) {
+      const unsigned char prev = static_cast<unsigned char>(css[i - 1]);
+      if ((prev >= 'a' && prev <= 'z') || (prev >= 'A' && prev <= 'Z') || (prev >= '0' && prev <= '9') || prev == '_') {
+        continue;
+      }
+    }
+    size_t j = i + kn;
+    while (j < n && modeSpace(css[j])) {
+      ++j;
+    }
+    if (j >= n || css[j] != ':') {
+      continue;
+    }
+    ++j;
+    while (j < n && modeSpace(css[j])) {
+      ++j;
+    }
+    const size_t vb = j;
+    while (j < n && css[j] != ';' && css[j] != '}' && css[j] != '!' && !modeSpace(css[j])) {
+      ++j;
+    }
+    WritingMode value = WritingMode::VerticalRl;
+    if (!cssValueMode(css + vb, j - vb, value)) {
+      continue;
+    }
+    size_t brace = i;
+    while (brace > 0 && css[brace] != '{') {
+      --brace;
+    }
+    if (css[brace] != '{') {
+      continue;
+    }
+    size_t selBeg = brace;
+    while (selBeg > 0 && css[selBeg - 1] != '}' && css[selBeg - 1] != '{') {
+      --selBeg;
+    }
+    applySelector(css + selBeg, brace - selBeg, value, htmlC, bodyC, best, picked, found);
+  }
+}
+
+// Linked stylesheet rule for the html or body class. False when none matches.
+bool cssWritingMode(ZipArchive& zip, const char* chapterDir, const char* html, const size_t n, WritingMode& mode) {
+  if (!html || n == 0) {
+    return false;
+  }
+  ModeClasses htmlC{};
+  ModeClasses bodyC{};
+  classesOnTag(html, n, "html", htmlC);
+  classesOnTag(html, n, "body", bodyC);
+  char hrefs[kMaxCssLinks][96]{};
+  int nHref = 0;
+  collectCssHrefs(html, n, hrefs, nHref);
+  if (nHref == 0) {
+    return false;
+  }
+  int best = 0;
+  bool found = false;
+  WritingMode picked = mode;
+  for (int i = 0; i < nHref; ++i) {
+    const ZipArchive::Entry* ent = findCss(zip, chapterDir, hrefs[i]);
+    if (!ent || ent->uncompSize == 0 || ent->uncompSize > kMaxCssBytes) {
+      continue;
+    }
+    size_t cssN = 0;
+    uint8_t* raw = zip.extract(*ent, &cssN);
+    if (!raw) {
+      continue;
+    }
+    if (cssN > 0 && cssN <= kMaxCssBytes) {
+      scanCssMode(reinterpret_cast<char*>(raw), cssN, htmlC, bodyC, best, picked, found);
+    }
+    free(raw);
+  }
+  if (!found) {
+    return false;
+  }
+  mode = picked;
+  return true;
+}
+
+bool takeWritingMode(const char* xml, size_t n, WritingMode bookMode, WritingMode& chapterMode);
+
+// Tag or inline style wins. Otherwise the linked stylesheet for this chapter.
+// A vertical chapter also makes the book vertical, and that sticks.
+void resolveChapterMode(ZipArchive& zip, const char* chapterDir, const char* sample, const size_t n,
+                        WritingMode& bookMode, WritingMode& chapterMode, bool& named) {
+  named = takeWritingMode(sample, n, bookMode, chapterMode);
+  if (!named && cssWritingMode(zip, chapterDir, sample, n, chapterMode)) {
+    named = true;
+  }
+  if (named && chapterMode == WritingMode::VerticalRl) {
+    bookMode = WritingMode::VerticalRl;
+  }
+}
+
 // True when the sample names a writing mode. Leaves `chapterMode` alone otherwise.
 bool takeWritingMode(const char* xml, const size_t n, const WritingMode bookMode, WritingMode& chapterMode) {
   WritingMode found = bookMode;
@@ -358,6 +775,9 @@ bool EpubBook::open(const char* epubPath, const char* atomPath, ProgressFn progr
   if (!okOpf) {
     close();
     return false;
+  }
+  if (verticalPreferred) {
+    mode = WritingMode::VerticalRl;
   }
   LOG_INF("EPUB", "opf %s spine=%u", opfName, nSpine);
 
@@ -513,7 +933,7 @@ bool EpubBook::open(const char* epubPath, const char* atomPath, ProgressFn progr
     }
     if (!onDisk && xml && n > 0) {
       inflateMs += millis() - tInf;
-      sniffed = takeWritingMode(reinterpret_cast<char*>(xml), n, mode, chapterMode);
+      resolveChapterMode(zip, ctx.chapterDir, reinterpret_cast<char*>(xml), n, mode, chapterMode, sniffed);
       items[i].atomOff = writer.position();
       writeChapterMode(writer, chapterMode);
       const unsigned long tSax = millis();
@@ -524,11 +944,11 @@ bool EpubBook::open(const char* epubPath, const char* atomPath, ProgressFn progr
     free(xml);
     if (!parsed && onDisk) {
       inflateMs += millis() - tInf;
-      char* sniffBuf = static_cast<char*>(malloc(4096));
+      char* sniffBuf = static_cast<char*>(malloc(kModeSample));
       if (sniffBuf) {
-        const int got = hf.read(sniffBuf, 4096);
+        const int got = hf.read(sniffBuf, kModeSample);
         if (got > 0) {
-          sniffed = takeWritingMode(sniffBuf, static_cast<size_t>(got), mode, chapterMode);
+          resolveChapterMode(zip, ctx.chapterDir, sniffBuf, static_cast<size_t>(got), mode, chapterMode, sniffed);
         }
         free(sniffBuf);
       }

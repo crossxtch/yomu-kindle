@@ -27,6 +27,7 @@ bool htmlToAtomsPull(int (*read)(void* ctx, char* dst, int max), void* ctx, Atom
                      HtmlIRResult* result = nullptr);
 
 // html/body class, else a `<style>` writing-mode. False when the item does not say.
+// The EPUB opener then checks a linked stylesheet for the html or body class.
 bool sniffWritingMode(const char* data, size_t len, WritingMode& mode);
 
 void splitReading(const uint32_t* rt, uint8_t rtN, uint8_t baseN, uint32_t* out, uint8_t* outCount /* per base, cap 4 */);
