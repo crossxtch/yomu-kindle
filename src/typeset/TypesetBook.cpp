@@ -1,5 +1,7 @@
 #include "TypesetBook.h"
 
+#include "PicturePage.h"
+
 #include <BoardConfig.h>
 #include <Logging.h>
 #include <ScratchHeap.h>
@@ -737,6 +739,25 @@ bool TypesetBook::appendPage(const uint32_t off, const uint8_t mode, const uint1
   return true;
 }
 
+void TypesetBook::preparePicture(ts::Atom& atom) const {
+  if (atom.kind != ts::AtomKind::Picture) {
+    return;
+  }
+  const uint16_t raw = static_cast<uint16_t>(atom.cp > 0xFFFFu ? 0xFFFFu : atom.cp);
+  const bool force = (raw & ts::kPictureForcePage) != 0;
+  const uint16_t id = static_cast<uint16_t>(raw & ts::kPictureIdMask);
+  atom.cp = id;
+  atom.startEm = force ? 1 : 0;
+  atom.tcyCount = 0;
+  int w = 0;
+  int h = 0;
+  if (!force && id != 0 && ts::pictureSize(picturePath, id, &w, &h) && w > 0 && h > 0) {
+    atom.tcy[0] = static_cast<uint32_t>(w);
+    atom.tcy[1] = static_cast<uint32_t>(h);
+    atom.tcyCount = 2;
+  }
+}
+
 bool TypesetBook::setLastPicture(const uint16_t pic) {
   if (nPages == 0) {
     return true;
@@ -802,6 +823,7 @@ bool TypesetBook::layoutPage(const uint32_t pageIndex) {
     if (!atoms.next(atom)) {
       break;
     }
+    preparePicture(atom);
     if (layouter.feed(atom, atomPos)) {
       complete = true;
       break;
@@ -822,6 +844,9 @@ bool TypesetBook::layoutPage(const uint32_t pageIndex) {
   uint16_t ids[ts::PageLayouter::kMaxGlyphs];
   uint16_t nIds = 0;
   for (uint16_t i = 0; i < loadedCount; ++i) {
+    if (ts::runPicture(loadedGlyphs[i])) {
+      continue;
+    }
     const uint16_t id = font.glyphId(loadedGlyphs[i].cp);
     if (id != 0xFFFF && nIds < ts::PageLayouter::kMaxGlyphs) {
       ids[nIds++] = id;

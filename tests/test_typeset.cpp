@@ -361,6 +361,65 @@ void testToc() {
   check(tocBreaks(copy) == 0, "copyright page is not a toc");
 }
 
+void testColumnPicture() {
+  ts::PageLayouter lay;
+  ts::LayoutOptions opt;
+  opt.width = 240;
+  opt.height = 320;
+  opt.em = 16;
+  opt.margin = 0;
+  opt.mode = ts::WritingMode::VerticalRl;
+  lay.begin(opt);
+
+  ts::Atom kana{};
+  kana.cp = 0x3042;
+  lay.feed(kana, 1);
+  ts::Atom pic{};
+  pic.kind = ts::AtomKind::Picture;
+  pic.cp = 1;
+  pic.tcyCount = 2;
+  pic.tcy[0] = 80;
+  pic.tcy[1] = 40;
+  check(!lay.feed(pic, 2), "small picture stays on the open page");
+  check(lay.takenPicture() == 0 && lay.deferredPicture() == 0, "small picture is not its own page");
+  ts::Atom after{};
+  after.cp = 0x3044;
+  check(!lay.feed(after, 3), "text continues after the picture");
+  check(lay.finish(), "column picture page commits");
+  check(lay.pageGlyphCount() == 3, "kana, picture, kana");
+  if (lay.pageGlyphCount() == 3) {
+    const ts::GlyphRun *p = lay.page();
+    check(ts::runPicture(p[1]), "the middle run is the picture");
+    check(p[1].cp == 1, "picture id is kept");
+    check(p[1].size > 0 && p[1].size <= 16, "picture fits the column");
+    check(p[2].y > p[1].y, "text follows the picture down the column");
+    check(p[2].x == p[0].x, "text stays in that column");
+  }
+
+  lay.begin(opt);
+  ts::Atom plate{};
+  plate.kind = ts::AtomKind::Picture;
+  plate.cp = 4;
+  plate.tcyCount = 2;
+  plate.tcy[0] = 800;
+  plate.tcy[1] = 1200;
+  check(lay.feed(plate, 0), "a plate commits a page");
+  check(lay.takenPicture() == 4, "a plate is its own page");
+  check(lay.pageGlyphCount() == 0, "a plate page has no glyphs");
+
+  lay.begin(opt);
+  lay.feed(kana, 1);
+  ts::Atom cover{};
+  cover.kind = ts::AtomKind::Picture;
+  cover.cp = 3;
+  cover.startEm = 1;
+  cover.tcyCount = 2;
+  cover.tcy[0] = 80;
+  cover.tcy[1] = 40;
+  check(lay.feed(cover, 2), "a cover still breaks the page");
+  check(lay.deferredPicture() == 3, "a cover is the next page");
+}
+
 void testPictures() {
   char dir[] = "/tmp/yomu-pic-XXXXXX";
   char pngSmall[256];
@@ -415,6 +474,7 @@ extern "C" int test_typeset_rules(void) {
   testLayout();
   testToc();
   testFace();
+  testColumnPicture();
   testPictures();
   return g_fails;
 }

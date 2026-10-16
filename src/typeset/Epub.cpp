@@ -477,7 +477,7 @@ bool EpubBook::open(const char* epubPath, const char* atomPath, ProgressFn progr
       }
       Atom a{};
       a.kind = id != 0 ? AtomKind::Picture : AtomKind::PageBreak;
-      a.cp = id;
+      a.cp = id != 0 ? (static_cast<uint32_t>(id) | kPictureForcePage) : 0;
       writer.write(a);
       items[i].done = 1;
       sliceEnd = static_cast<uint16_t>(i + 1);

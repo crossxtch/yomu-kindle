@@ -90,6 +90,14 @@ bool TypesetBook::renderGray(uint8_t* gray, const int w, const int h, const uint
   const int rubyEm = font.rubyEmPx();
   for (uint16_t i = 0; i < loadedCount; ++i) {
     const ts::GlyphRun& g = loadedGlyphs[i];
+    if (ts::runPicture(g)) {
+      const int bw = g.size;
+      const int bh = ts::runAdvance(g);
+      if (g.cp != 0 && bw > 0 && bh > 0) {
+        ts::picturePaintBox(picturePath, static_cast<uint16_t>(g.cp), gray, w, h, g.x, g.y, bw, bh);
+      }
+      continue;
+    }
     const bool vert = !ts::runRubyAbove(g);
     const int adv = ts::runAdvance(g);
     const bool tcyRun = ts::runTcy(g) && g.rubyCount > 1;

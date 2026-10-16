@@ -36,6 +36,7 @@ constexpr uint8_t kRunTcy = 2;
 constexpr uint8_t kRunRubyAbove = 4;
 constexpr uint8_t kRunHalfCell = 8;
 constexpr uint8_t kRunSticky = 16;
+constexpr uint8_t kRunPicture = 32;  // cp is a picture id; size is the box width, advance the height
 
 struct GlyphRun {
   uint32_t cp = 0;
@@ -54,6 +55,7 @@ inline bool runRotate90(const GlyphRun& g) { return (g.flags & kRunRotate) != 0;
 inline bool runTcy(const GlyphRun& g) { return (g.flags & kRunTcy) != 0; }
 inline bool runRubyAbove(const GlyphRun& g) { return (g.flags & kRunRubyAbove) != 0; }
 inline bool runSticky(const GlyphRun& g) { return (g.flags & kRunSticky) != 0; }
+inline bool runPicture(const GlyphRun& g) { return (g.flags & kRunPicture) != 0; }
 inline int16_t runAdvance(const GlyphRun& g) {
   return g.advance ? static_cast<int16_t>(g.advance) : static_cast<int16_t>(g.size);
 }
@@ -156,6 +158,7 @@ class PageLayouter {
   void placeChar(uint32_t cp, const uint32_t* ruby, uint8_t rubyCount, bool tcy, uint8_t emphasis,
                  const uint32_t* tcyCps, uint8_t tcyN);
   void placeGroup(const Atom& atom);
+  void placePicture(uint16_t id, int pxW, int pxH);
   uint16_t stickyTail(bool vertical) const;
   void relocateTail(uint16_t n, bool vertical);
   int16_t glyphY() const { return static_cast<int16_t>(lineY + rubyGutter); }

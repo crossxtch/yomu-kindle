@@ -51,6 +51,59 @@ bool writeHeader(HalFile& f, const uint16_t count) {
   return f.seekSet(0) && f.write(hdr, sizeof hdr) == sizeof hdr;
 }
 
+/* Scale src into the box. Pixels outside the page are skipped. */
+void scaleInto(uint8_t* dst, const int dstW, const int dstH, const int x0, const int y0, const int boxW, const int boxH,
+               const uint8_t* src, const int sw, const int sh) {
+  if (!dst || !src || sw < 1 || sh < 1 || boxW < 1 || boxH < 1 || dstW < 1 || dstH < 1) {
+    return;
+  }
+  for (int y = 0; y < boxH; ++y) {
+    const int dy = y0 + y;
+    if (dy < 0 || dy >= dstH) {
+      continue;
+    }
+    int sy0 = static_cast<int>(static_cast<long long>(y) * sh / boxH);
+    int sy1 = static_cast<int>(static_cast<long long>(y + 1) * sh / boxH);
+    if (sy1 <= sy0) {
+      sy1 = sy0 + 1;
+    }
+    if (sy0 < 0) {
+      sy0 = 0;
+    }
+    if (sy1 > sh) {
+      sy1 = sh;
+    }
+    uint8_t* row = dst + static_cast<size_t>(dy) * static_cast<size_t>(dstW);
+    for (int x = 0; x < boxW; ++x) {
+      const int dx = x0 + x;
+      if (dx < 0 || dx >= dstW) {
+        continue;
+      }
+      int sx0 = static_cast<int>(static_cast<long long>(x) * sw / boxW);
+      int sx1 = static_cast<int>(static_cast<long long>(x + 1) * sw / boxW);
+      if (sx1 <= sx0) {
+        sx1 = sx0 + 1;
+      }
+      if (sx0 < 0) {
+        sx0 = 0;
+      }
+      if (sx1 > sw) {
+        sx1 = sw;
+      }
+      unsigned sum = 0;
+      unsigned n = 0;
+      for (int sy = sy0; sy < sy1; ++sy) {
+        const uint8_t* srow = src + static_cast<size_t>(sy) * static_cast<size_t>(sw);
+        for (int sx = sx0; sx < sx1; ++sx) {
+          sum += srow[sx];
+          ++n;
+        }
+      }
+      row[dx] = n > 0 ? static_cast<uint8_t>(sum / n) : 255;
+    }
+  }
+}
+
 /* Scale src into the center of a white page. Downscales average the source block. */
 void fitGray(uint8_t* dst, const int dw, const int dh, const uint8_t* src, const int sw, const int sh) {
   memset(dst, 255, static_cast<size_t>(dw) * static_cast<size_t>(dh));
@@ -80,43 +133,59 @@ void fitGray(uint8_t* dst, const int dw, const int dh, const uint8_t* src, const
   }
   const int ox = (dw - fw) / 2;
   const int oy = (dh - fh) / 2;
-  for (int y = 0; y < fh; ++y) {
-    int sy0 = static_cast<int>(static_cast<long long>(y) * sh / fh);
-    int sy1 = static_cast<int>(static_cast<long long>(y + 1) * sh / fh);
-    if (sy1 <= sy0) {
-      sy1 = sy0 + 1;
+  scaleInto(dst, dw, dh, ox, oy, fw, fh, src, sw, sh);
+}
+
+bool readPicture(const char* path, const uint16_t id, uint8_t** out, uint32_t* outN) {
+  *out = nullptr;
+  *outN = 0;
+  if (!path || !path[0] || id == 0) {
+    return false;
+  }
+  HalFile in;
+  uint8_t hdr[kPictureHeader];
+  if (!Storage.openFileForRead("TS", path, in) || in.read(hdr, sizeof hdr) != static_cast<int>(sizeof hdr) ||
+      getU32(hdr) != kPictureMagic) {
+    return false;
+  }
+  const uint16_t count = static_cast<uint16_t>(hdr[4] | (hdr[5] << 8));
+  if (id > count) {
+    return false;
+  }
+  uint32_t sz = 0;
+  for (uint16_t i = 1; i <= id; ++i) {
+    if (!readU32(in, sz) || sz == 0 || sz > kMaxImageBytes) {
+      return false;
     }
-    if (sy0 < 0) {
-      sy0 = 0;
-    }
-    if (sy1 > sh) {
-      sy1 = sh;
-    }
-    uint8_t* row = dst + static_cast<size_t>(oy + y) * static_cast<size_t>(dw) + ox;
-    for (int x = 0; x < fw; ++x) {
-      int sx0 = static_cast<int>(static_cast<long long>(x) * sw / fw);
-      int sx1 = static_cast<int>(static_cast<long long>(x + 1) * sw / fw);
-      if (sx1 <= sx0) {
-        sx1 = sx0 + 1;
-      }
-      if (sx0 < 0) {
-        sx0 = 0;
-      }
-      if (sx1 > sw) {
-        sx1 = sw;
-      }
-      unsigned sum = 0;
-      unsigned n = 0;
-      for (int sy = sy0; sy < sy1; ++sy) {
-        const uint8_t* srow = src + static_cast<size_t>(sy) * static_cast<size_t>(sw);
-        for (int sx = sx0; sx < sx1; ++sx) {
-          sum += srow[sx];
-          ++n;
-        }
-      }
-      row[x] = n > 0 ? static_cast<uint8_t>(sum / n) : 255;
+    if (i < id && !in.seekCur(static_cast<int64_t>(sz))) {
+      return false;
     }
   }
+  uint8_t* bytes = static_cast<uint8_t*>(malloc(sz));
+  if (!bytes || in.read(bytes, sz) != static_cast<int>(sz)) {
+    free(bytes);
+    return false;
+  }
+  *out = bytes;
+  *outN = sz;
+  return true;
+}
+
+bool loadGray(const char* path, const uint16_t id, uint8_t** pix, int* w, int* h) {
+  uint8_t* bytes = nullptr;
+  uint32_t sz = 0;
+  if (!readPicture(path, id, &bytes, &sz)) {
+    return false;
+  }
+  int comp = 0;
+  *pix = stbi_load_from_memory(bytes, static_cast<int>(sz), w, h, &comp, 1);
+  free(bytes);
+  if (!*pix || *w < 1 || *h < 1) {
+    stbi_image_free(*pix);
+    *pix = nullptr;
+    return false;
+  }
+  return true;
 }
 
 }  // namespace
@@ -207,44 +276,45 @@ uint16_t PictureWriter::addJpeg(HalFile& image) { return store(image); }
 
 uint16_t PictureWriter::addPng(HalFile& image) { return store(image); }
 
-bool picturePaint(const char* path, const uint16_t id, uint8_t* gray, const int pageW, const int pageH) {
-  if (!path || !path[0] || !gray || id == 0 || pageW < 1 || pageH < 1) {
-    return false;
-  }
-  HalFile in;
-  uint8_t hdr[kPictureHeader];
-  if (!Storage.openFileForRead("TS", path, in) || in.read(hdr, sizeof hdr) != static_cast<int>(sizeof hdr) ||
-      getU32(hdr) != kPictureMagic) {
-    return false;
-  }
-  const uint16_t count = static_cast<uint16_t>(hdr[4] | (hdr[5] << 8));
-  if (id > count) {
-    return false;
-  }
+bool pictureSize(const char* path, const uint16_t id, int* w, int* h) {
+  uint8_t* bytes = nullptr;
   uint32_t sz = 0;
-  for (uint16_t i = 1; i <= id; ++i) {
-    if (!readU32(in, sz) || sz == 0 || sz > kMaxImageBytes) {
-      return false;
-    }
-    if (i < id && !in.seekCur(static_cast<int64_t>(sz))) {
-      return false;
-    }
-  }
-  uint8_t* bytes = static_cast<uint8_t*>(malloc(sz));
-  if (!bytes || in.read(bytes, sz) != static_cast<int>(sz)) {
-    free(bytes);
+  if (!w || !h || !readPicture(path, id, &bytes, &sz)) {
     return false;
   }
+  int comp = 0;
+  const bool ok = stbi_info_from_memory(bytes, static_cast<int>(sz), w, h, &comp) && *w > 0 && *h > 0;
+  free(bytes);
+  return ok;
+}
+
+bool picturePaint(const char* path, const uint16_t id, uint8_t* gray, const int pageW, const int pageH) {
+  if (!gray || pageW < 1 || pageH < 1) {
+    return false;
+  }
+  uint8_t* pix = nullptr;
   int w = 0;
   int h = 0;
-  int comp = 0;
-  uint8_t* pix = stbi_load_from_memory(bytes, static_cast<int>(sz), &w, &h, &comp, 1);
-  free(bytes);
-  if (!pix || w < 1 || h < 1) {
-    stbi_image_free(pix);
+  if (!loadGray(path, id, &pix, &w, &h)) {
     return false;
   }
   fitGray(gray, pageW, pageH, pix, w, h);
+  stbi_image_free(pix);
+  return true;
+}
+
+bool picturePaintBox(const char* path, const uint16_t id, uint8_t* gray, const int pageW, const int pageH, const int x,
+                     const int y, const int boxW, const int boxH) {
+  if (!gray || pageW < 1 || pageH < 1 || boxW < 1 || boxH < 1) {
+    return false;
+  }
+  uint8_t* pix = nullptr;
+  int w = 0;
+  int h = 0;
+  if (!loadGray(path, id, &pix, &w, &h)) {
+    return false;
+  }
+  scaleInto(gray, pageW, pageH, x, y, boxW, boxH, pix, w, h);
   stbi_image_free(pix);
   return true;
 }

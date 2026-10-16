@@ -12,6 +12,10 @@ namespace ts {
 constexpr uint32_t kPictureMagic = 0x31474D49u;
 constexpr uint16_t kMaxPictures = 512;
 constexpr uint32_t kPictureHeader = 16;
+/* Picture atom cp is the sidecar id in the low 15 bits. The high bit forces a
+ * page of its own (a cover, 扉, or a spine image). */
+constexpr uint16_t kPictureForcePage = 0x8000u;
+constexpr uint16_t kPictureIdMask = 0x7fffu;
 
 class PictureWriter {
  public:
@@ -38,7 +42,14 @@ class PictureWriter {
   uint16_t store(HalFile& image);
 };
 
+/* Pixel size of image `id`. False when the record is missing. */
+bool pictureSize(const char* path, uint16_t id, int* w, int* h);
+
 /* Fit image `id` inside the page. 0 is black and 255 is white. Margins stay white. */
 bool picturePaint(const char* path, uint16_t id, uint8_t* gray, int pageW, int pageH);
+
+/* Draw image `id` into the box at (x, y). The rest of the page is left alone. */
+bool picturePaintBox(const char* path, uint16_t id, uint8_t* gray, int pageW, int pageH, int x, int y, int boxW,
+                     int boxH);
 
 }  // namespace ts

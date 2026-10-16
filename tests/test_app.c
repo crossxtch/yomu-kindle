@@ -1302,6 +1302,43 @@ static void test_typeset(void) {
       free(page);
     }
     ts_close(book);
+
+    /* The same 80x40 image on a larger page fits in the column. */
+    book = ts_open(pic_epub, dir, NULL, 240, 320);
+    expect(book != NULL, ts_error(NULL));
+    if (book) {
+      uint8_t *wide = malloc(240u * 320u);
+      expect(wide != NULL, "column picture buffer");
+      if (wide) {
+        int solid = 0;
+        int min_y = 320;
+        int max_y = 0;
+        int y;
+        int x;
+        memset(wide, 255, 240u * 320u);
+        expect(ts_render(book, 0, wide, 240, 320) == 1, "render column picture");
+        for (y = 0; y < 320; y++) {
+          for (x = 0; x < 240; x++) {
+            uint8_t px = wide[(size_t)y * 240u + (size_t)x];
+            if (px < 32) {
+              solid++;
+            }
+            if (px < 250) {
+              if (y < min_y) {
+                min_y = y;
+              }
+              if (y > max_y) {
+                max_y = y;
+              }
+            }
+          }
+        }
+        expect(solid > 20 && solid < 2000, "small picture stays in the column");
+        expect(max_y - min_y >= 16, "text follows the picture on the page");
+        free(wide);
+      }
+      ts_close(book);
+    }
   }
 }
 

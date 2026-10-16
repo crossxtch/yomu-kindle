@@ -1,6 +1,7 @@
 #include "HtmlIR.h"
 
 #include "HtmlSax.h"
+#include "PicturePage.h"
 
 #include <Utf8.h>
 
@@ -716,6 +717,9 @@ static bool htmlFromSax(HtmlSax& sax, const AtomSink sink, HtmlIRResult* result)
             Atom pic{};
             pic.kind = AtomKind::Picture;
             pic.cp = id;
+            if (pictureBody) {
+              pic.cp |= kPictureForcePage;
+            }
             emit(pic, sax.pos);
           } else if (pictureBody && textCount < 2000) {
             Atom pic{};

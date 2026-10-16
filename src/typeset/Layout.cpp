@@ -215,6 +215,113 @@ void PageLayouter::relocateTail(const uint16_t nIn, const bool vertical) {
   }
 }
 
+namespace {
+
+void fitBox(const int sw, const int sh, int maxW, int maxH, int& dw, int& dh) {
+  if (maxW < 1) {
+    maxW = 1;
+  }
+  if (maxH < 1) {
+    maxH = 1;
+  }
+  dw = sw > 0 ? sw : 1;
+  dh = sh > 0 ? sh : 1;
+  if (dw > maxW || dh > maxH) {
+    if (static_cast<long long>(dw) * maxH <= static_cast<long long>(dh) * maxW) {
+      dh = maxH;
+      dw = static_cast<int>(static_cast<long long>(sw) * maxH / (sh > 0 ? sh : 1));
+    } else {
+      dw = maxW;
+      dh = static_cast<int>(static_cast<long long>(sh) * maxW / (sw > 0 ? sw : 1));
+    }
+  }
+  if (dw < 1) {
+    dw = 1;
+  }
+  if (dh < 1) {
+    dh = 1;
+  }
+  if (dw > maxW) {
+    dw = maxW;
+  }
+  if (dh > maxH) {
+    dh = maxH;
+  }
+}
+
+/* A plate covers at least half the short side of the page. Anything smaller
+ * shares the column with the text. */
+bool staysInColumn(const int pxW, const int pxH, const int pageW, const int pageH) {
+  if (pxW < 1 || pxH < 1 || pageW < 1 || pageH < 1) {
+    return false;
+  }
+  const int longer = pxW > pxH ? pxW : pxH;
+  const int shorter = pageW < pageH ? pageW : pageH;
+  return longer * 2 <= shorter;
+}
+
+}  // namespace
+
+void PageLayouter::placePicture(const uint16_t id, const int pxW, const int pxH) {
+  const int em = opt.em > 0 ? opt.em : 1;
+  const bool vert = opt.mode == WritingMode::VerticalRl;
+  int bw = 1;
+  int bh = 1;
+  if (vert) {
+    if (columnClosed) {
+      newColumn();
+    }
+    const int colH = colBottom > colTop ? colBottom - colTop : 1;
+    fitBox(pxW, pxH, em, colH, bw, bh);
+    if (y > indent && static_cast<int>(y) + bh > colBottom) {
+      newColumn();
+    }
+    const int room = colBottom - y;
+    if (room > 0 && bh > room) {
+      fitBox(pxW, pxH, em, room, bw, bh);
+    }
+    int x = static_cast<int>(colX) + (em - bw) / 2;
+    if (x < colX) {
+      x = colX;
+    }
+    GlyphRun run{};
+    run.cp = id;
+    run.size = static_cast<uint16_t>(bw);
+    run.advance = static_cast<uint16_t>(bh);
+    run.flags = kRunPicture;
+    run.x = static_cast<int16_t>(x);
+    run.y = y;
+    emit(run, feedPos);
+    y = static_cast<int16_t>(y + bh);
+    return;
+  }
+  if (columnClosed) {
+    newLine();
+  }
+  const int lineW = lineRight > hanmenLeft ? lineRight - hanmenLeft : 1;
+  fitBox(pxW, pxH, lineW, em, bw, bh);
+  if (x > indent && static_cast<int>(x) + bw > lineRight) {
+    newLine();
+  }
+  const int room = lineRight - x;
+  if (room > 0 && bw > room) {
+    fitBox(pxW, pxH, room, em, bw, bh);
+  }
+  int py = static_cast<int>(glyphY()) + (em - bh) / 2;
+  if (py < glyphY()) {
+    py = glyphY();
+  }
+  GlyphRun run{};
+  run.cp = id;
+  run.size = static_cast<uint16_t>(bw);
+  run.advance = static_cast<uint16_t>(bh);
+  run.flags = kRunPicture;
+  run.x = x;
+  run.y = static_cast<int16_t>(py);
+  emit(run, feedPos);
+  x = static_cast<int16_t>(x + bw);
+}
+
 void PageLayouter::placeChar(const uint32_t cp, const uint32_t* ruby, const uint8_t rubyCount, const bool tcy,
                              const uint8_t emphasis, const uint32_t* tcyCps, const uint8_t tcyN) {
   const int16_t F = opt.em;
@@ -417,8 +524,17 @@ bool PageLayouter::feed(const Atom& atom, const uint32_t atomPos) {
   deferredId = 0;
   switch (atom.kind) {
     case AtomKind::Picture: {
-      const uint16_t id = static_cast<uint16_t>(atom.cp);
+      const uint16_t id = static_cast<uint16_t>(atom.cp > 0xFFFFu ? 0xFFFFu : atom.cp);
       if (id == 0) {
+        break;
+      }
+      const bool havePx = atom.tcyCount >= 2 && atom.tcy[0] > 0 && atom.tcy[1] > 0;
+      const int pxW = havePx ? static_cast<int>(atom.tcy[0]) : 0;
+      const int pxH = havePx ? static_cast<int>(atom.tcy[1]) : 0;
+      /* startEm is set in memory for a cover or spine image. Pixel size is
+       * tcy[0] by tcy[1]. Neither is stored in the atom file. */
+      if (atom.startEm == 0 && staysInColumn(pxW, pxH, opt.width, opt.height)) {
+        placePicture(id, pxW, pxH);
         break;
       }
       // One committed buffer. Glyphs already on this page stay a text page;
