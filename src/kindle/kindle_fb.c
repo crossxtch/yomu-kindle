@@ -151,16 +151,12 @@ static int env_force(const char *name, int *out) {
   return 1;
 }
 
-/* 90° landscape unless YOMU_ROTATE is a single digit 0..3. 1 is 270°. */
+/* The page is 90° clockwise. YOMU_ROTATE is not a switch. */
 static int env_rotate(void) {
   const char *v = getenv("YOMU_ROTATE");
-  if (!v || !v[0]) {
-    return 3;
+  if (v && v[0] && !(v[0] == '3' && v[1] == '\0')) {
+    yomu_log("ignored YOMU_ROTATE=%s", v);
   }
-  if (v[0] >= '0' && v[0] <= '3' && v[1] == '\0') {
-    return v[0] - '0';
-  }
-  yomu_log("ignored YOMU_ROTATE=%s", v);
   return 3;
 }
 
