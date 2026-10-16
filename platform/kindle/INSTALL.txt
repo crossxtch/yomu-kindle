@@ -1,0 +1,27 @@
+yomu reads .epub and .txt books on a jailbroken Kindle (Paperwhite 2 and newer).
+
+Needs the jailbreak hotfix that exposes /dev/fb0, plus KUAL (firmware
+before 5.16.3) or KUALA (5.16.3 and later).
+
+Copy onto the Kindle USB drive:
+
+  yomu/                 -> the root of the USB drive
+  extensions/yomu/      -> extensions/ on the USB drive
+
+Eject, open KUAL or KUALA, and choose yomu. The yomu item pauses the
+Kindle UI. yomu no framework stops it and starts it again on
+exit. Put .epub and .txt files in yomu/books on the USB drive. yomu
+creates that folder if it is missing. yomu starts in landscape, turned 90
+degrees (1648x1236 on a Paperwhite 11), and typesets each page to that panel.
+YOMU_ROTATE=0 uses the upright panel, and YOMU_ROTATE=1 turns 270 degrees.
+
+The first library row is 転送. While that screen is open, a browser
+on the same Wi-Fi can upload and download files in yomu/books. The
+screen shows the address. There is no password. Tap 停止 to close it.
+It uses port 80, or 8080 if 80 is busy. Set YOMU_PORT to force one
+port. Connect Wi-Fi first, and launch yomu so Wi-Fi stays up.
+yomu no framework can drop the network.
+
+This package has not been run on a device. See the README in the source
+tree for touch and viewport overrides if the picture or taps are wrong.
+Log: yomu/yomu.log on the Kindle drive.

@@ -147,5 +147,44 @@ $(HOST)/test_typeset.o: tests/test_typeset.cpp
 test: $(HOST)/test_app
 	$(HOST)/test_app
 
+$(KINDLE)/%.o: src/%.c
+	mkdir -p $(dir $@)
+	$(ZIG) cc -target $(KINDLE_TARGET) $(CFLAGS) -c -o $@ $<
+
+$(KINDLE)/puff.o: third_party/puff.c
+	mkdir -p $(dir $@)
+	$(ZIG) cc -target $(KINDLE_TARGET) $(PUFF_CFLAGS) -c -o $@ $<
+
+$(KINDLE)/filepage.o: $(BUILD)/filepage.c
+	mkdir -p $(dir $@)
+	$(ZIG) cc -target $(KINDLE_TARGET) $(CFLAGS) -c -o $@ $<
+
+$(KINDLE)/stb_truetype.o: third_party/stb_truetype.c
+	mkdir -p $(dir $@)
+	$(ZIG) cc -target $(KINDLE_TARGET) $(PUFF_CFLAGS) -Ithird_party -c -o $@ $<
+
+$(KINDLE)/%.o: src/%.cpp
+	mkdir -p $(dir $@)
+	$(ZIG) c++ -target $(KINDLE_TARGET) $(TS_CXXFLAGS) -c -o $@ $<
+
+$(KINDLE)/ft/%.o: third_party/freetype/src/%.c
+	mkdir -p $(dir $@)
+	$(ZIG) cc -target $(KINDLE_TARGET) $(FT_CFLAGS) -c -o $@ $<
+
+dist/kindle/yomu/yomu: $(KINDLE_OBJS) \
+		platform/kindle/yomu.sh platform/kindle/INSTALL.txt \
+		platform/kindle/extensions/yomu/config.xml platform/kindle/extensions/yomu/menu.json
+	mkdir -p dist/kindle/yomu dist/kindle/extensions/yomu
+	$(ZIG) c++ -target $(KINDLE_TARGET) -static -s -o $@ $(KINDLE_OBJS) -lm
+	cp platform/kindle/yomu.sh dist/kindle/yomu/yomu.sh
+	chmod 755 dist/kindle/yomu/yomu.sh $@
+	cp platform/kindle/extensions/yomu/config.xml platform/kindle/extensions/yomu/menu.json \
+		dist/kindle/extensions/yomu/
+	cp platform/kindle/INSTALL.txt dist/kindle/INSTALL.txt
+
+kindle: dist/kindle/yomu/yomu
+
+package: kindle
+
 clean:
 	rm -rf $(BUILD)
