@@ -24,7 +24,10 @@ OBJS := \
 	build/host/ui/font.o \
 	build/host/stb_truetype.o \
 	build/host/book/books.o \
-	build/host/book/progress.o
+	build/host/book/progress.o \
+	build/host/net/http.o \
+	build/host/net/fileserver.o \
+	build/host/filepage.o
 
 .PHONY: all clean
 
