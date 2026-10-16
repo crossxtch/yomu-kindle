@@ -4,11 +4,11 @@ A reader for `.epub` and `.txt` books on a jailbroken Kindle. It is a small
 standalone program, the same idea as [KOReader](https://github.com/koreader/koreader)'s
 Kindle launcher: a KUAL menu entry, the Kindle UI paused, and pages drawn
 straight to the e-ink panel. Japanese text is typeset in the app, in vertical
-columns, with a mincho or gothic face already on the Kindle.
+columns, with a mincho face already on the Kindle.
 
 Filenames and chapter names are UTF-8. yomu draws them
 with a Japanese font already on the Kindle: Gothic, then Mincho, then
-Code2000, then a face from the Japanese font pack. `YOMU_FONT` names a
+a face from the Japanese font pack. `YOMU_FONT` names a
 `.ttf`, `.ttc`, or `.otf` when you want a different file. Menus, buttons,
 and the transfer page are Japanese too. ASCII stays on the 8×8 face. A
 name with no letters is still listed as 「本N」 or 「第N章」.
@@ -42,16 +42,15 @@ Eject, then open KUAL or KUALA and choose yomu.
 Put `.epub` and `.txt` files in `/mnt/us/yomu/books` on the USB volume. yomu creates
 that folder if it is missing. Subfolders are included. yomu starts in
 landscape. On a Paperwhite 11 that is 1648×1236, turned 90° clockwise.
-`YOMU_ROTATE=0` uses the upright 1236×1648 panel, and `1` turns the other
-way, 270°. Each page is typeset to that panel. Hidden folders are skipped, and
+That orientation is fixed. `YOMU_ROTATE` is ignored. Each page is typeset to that panel. Hidden folders are skipped, and
 so are `system`, `extensions`, and `lost+found` at the top of `books`. 終了
 on the menu exits yomu, and the launcher restores the Kindle UI. The
-power button sleeps the Kindle. Idle sleep stays off until 終了. yomu is
+power button sleeps the Kindle when the framework is still running, so
+use the **yomu** item. Idle sleep stays off until 終了. yomu is
 still running when the screen wakes. The frontlight stays off for the
 session and comes back when yomu exits.
 
-This build was checked on a desktop against a real book. It has not been
-run on a Kindle.
+Host tests run on a desktop. This build has also been used on a Paperwhite 11.
 
 ## Reading
 
@@ -68,15 +67,33 @@ library also exits.
 
 文字 offers 小 and 大 around the fitted size. The steps are 最小, 小さめ,
 やや小, 標準, やや大, 大きめ, and 最大. 標準 is the size yomu picks for
-the panel. The face list starts with 標準, then the Japanese fonts on
-the device, then any `.ttf`, `.ttc`, or `.otf` in `yomu/fonts`. The
-choice is kept in `/mnt/us/yomu/type.txt`. Changing it typesets the open
-book again and returns to the page. 標準 follows `YOMU_FONT` when that
-is set, then the usual mincho and gothic faces.
+the panel. The face list is the Japanese fonts on the device, then any
+`.ttf`, `.ttc`, `.otf`, or `.otc` in `yomu/fonts` or `/mnt/us/fonts`.
+A collection is one row for each face that has kana and kanji. The row
+in use has the mark. With no saved face that is `YOMU_FONT` when set,
+then the usual mincho faces. The path and that face's index are kept in
+`/mnt/us/yomu/type.txt`. Changing the row typesets the open
+book again and returns to the page. 上 and 下 move a page when the
+list is longer than the screen. Gothic stays on filenames and menus.
+The chapter list puts the bar on the chapter that contains the open page.
 
-An illustration in an EPUB is its own page. JPEG, PNG, and GIF are fitted
-inside the page. SVG is left out. A picture smaller than 64 pixels on both
-sides is shown as its alt text instead. A book keeps at most 512 pictures.
+A chapter keeps the writing direction named on its tag or in its stylesheet.
+When the chapter is silent, that stylesheet wins over a package that says
+horizontal. A vertical chapter keeps later untitled chapters vertical.
+
+`b` and `strong` are bold unless a rule says normal. `font-weight` and a
+`font-size` in em, rem, percent, or a keyword are read from a simple
+selector (`strong`, `.big`, `span.big`) in a linked sheet or a style block.
+The size stays a percent of the body em. The page leaves 16 pixels clear
+at the top and bottom when the panel is tall enough. The sides stay at
+the edge.
+
+An illustration stays in the column when both pixel sides are known and
+the longer side is at most half the shorter side of the page. Anything
+larger is its own page. JPEG, PNG, and GIF are fitted inside that area.
+SVG is left out. A picture smaller than 64 pixels on both sides is shown
+as its alt text instead. A book keeps at most 512 pictures. A spine of up
+to 2048 files opens.
 
 Every screen except the page takes taps only. A swipe there does nothing.
 戻る, 上, and 下 appear when that screen needs them. 上 and 下
@@ -133,11 +150,10 @@ Other switches:
 | Variable | Meaning |
 | --- | --- |
 | `YOMU_ROOT` | Folder to scan and to serve. Default `/mnt/us/yomu/books`. |
-| `YOMU_FONT` | TrueType face for the Japanese UI, filenames, and chapter names. When 文字 is 標準, the book uses this file first. Default is the Kindle Gothic, Mincho, or Code2000 font. |
+| `YOMU_FONT` | TrueType face for the Japanese UI, filenames, and chapter names. When no face is saved, the book uses this file first. Default is the Kindle Gothic, then Mincho. |
 | `YOMU_HOME` | Log and progress. Default `/mnt/us/yomu`. |
 | `YOMU_PORT` | File-transfer port. When unset, yomu tries 80 and then 8080. |
 | `YOMU_FULL_EVERY` | Page turns between full refreshes. `1` flashes every page. `0` flashes only the first page and the menus. Default `20`. |
-| `YOMU_ROTATE` | `0` upright, `1` landscape at 270°, `2` upside down, `3` landscape at 90° (default). |
 | `YOMU_FB_INVERT` | `1` or `0`. Overrides the black/white sense of the panel. |
 | `YOMU_TOUCH_SWAP` | `1` swaps touch X and Y. Default is automatic. |
 | `YOMU_TOUCH_FLIP_X` | `1` mirrors touch horizontally. |
@@ -168,11 +184,38 @@ That refreshes `dist/kindle/`. The prebuilt `dist/kindle/yomu/yomu` in
 this tree is that static binary, so a Kindle can be loaded without a cross
 compiler.
 
+## Source
+
+```
+src/ui        screens, gestures, and menu text
+src/book      library, progress, type.txt, and the typesetter bridge
+src/typeset   EPUB and txt layout, and the FreeType raster
+src/kindle    framebuffer, touch, sleep, and main
+src/net       the transfer server and the host HTTP client
+src/util      log and UTF-8
+platform/kindle   KUAL launcher, copied into dist/kindle
+tests         host tests run by make test
+reference/koreader   notes only; it is not built or linked
+```
+
+`src/typeset` started as a port of crossjp. The files named in
+`src/typeset/LICENSE` stay under that MIT license. FaceCss, FtFont,
+HalPosix, and TypesetBookGray are part of yomu.
+
 ## Third party
+
+Portions of this software are copyright © 1996-2002, 2006 The FreeType
+Project (www.freetype.org). Licensed under the FreeType License, in
+`third_party/freetype/FTL.TXT`. yomu builds FreeType 2.13.3 with the
+TrueType and CFF raster, not the GPL copy of the same tree.
 
 - `third_party/puff.c` and `third_party/puff.h` are Mark Adler's puff (zlib
   contrib), with a `puff_stream` refill callback. yomu uses it to inflate
   EPUB zip members. The notice in those files stays.
-- `third_party/font8x8.h` is the public-domain font8x8 basic set.
+- `third_party/font8x8.h` is the public-domain font8x8 basic set. ASCII
+  menus and the page counter use it.
 - `third_party/stb_truetype.h` is Sean Barrett's stb_truetype 1.26, public
-  domain. It rasterizes the Japanese font that is already on the device.
+  domain. It draws the Japanese font already on the device for filenames,
+  chapter names, and menus.
+- `third_party/stb_image.h` is Sean Barrett's stb_image 2.30, public
+  domain. It decodes JPEG, PNG, and GIF pictures in an EPUB.
