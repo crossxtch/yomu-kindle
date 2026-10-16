@@ -54,7 +54,16 @@ OBJS := \
 	build/host/typeset/Utf8.o \
 	build/host/typeset/Zip.o \
 	build/host/book/typeface.o \
-	build/host/book/tsbook.o
+	build/host/book/tsbook.o \
+	build/host/ui/screen.o \
+	build/host/ui/screen_library.o \
+	build/host/ui/screen_reader.o \
+	build/host/ui/screen_menu.o \
+	build/host/ui/screen_chapters.o \
+	build/host/ui/screen_jump.o \
+	build/host/ui/screen_type.o \
+	build/host/ui/screen_xfer.o \
+	build/host/ui/app.o
 
 .PHONY: all clean
 
