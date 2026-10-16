@@ -4,8 +4,8 @@
 #include <stdint.h>
 
 /* Maps a Japanese TrueType face that is already on the machine.
- * On a Kindle that is Gothic, then Mincho, then Code2000, then the
- * Japanese font pack. YOMU_FONT overrides the path. Returns 1 when
+ * On a Kindle that is Gothic, then Mincho, then the Japanese font pack.
+ * YOMU_FONT overrides the path. Returns 1 when
  * the face has hiragana and a CJK ideograph.
  */
 int yomu_font_open(void);

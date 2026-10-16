@@ -20,8 +20,9 @@ class TypesetBook {
   // `resumePage` / `resumeAtom` are the saved reading position. A cold open
   // ingests and lays out only the opening chapter; a resume lays out the chapter
   // that contains `resumeAtom` and leaves the rest for extendAhead().
+  // faceIndex < 0 uses the first face in the file that has あ and 一.
   bool open(const char* path, ts::EpubBook::ProgressFn progress = nullptr, void* progressCtx = nullptr,
-            const char* fontPath = nullptr, uint32_t resumePage = 0, uint32_t resumeAtom = 0);
+            const char* fontPath = nullptr, uint32_t resumePage = 0, uint32_t resumeAtom = 0, int faceIndex = -1);
   void close();
   bool isOpen() const { return opened; }
   /* The book's writing mode. A vertical book turns the page from the right. */
@@ -138,8 +139,10 @@ class TypesetBook {
   // Kept for a later chapter open. Background steps do not call it.
   ts::EpubBook::ProgressFn hookFn = nullptr;
   void* hookCtx = nullptr;
+  // Face inside a collection. 0 keeps the page-index name used by a single face.
+  int faceIndex = 0;
 
-  bool loadFont(const char* fontPath);
+  bool loadFont(const char* fontPath, int faceIndex);
   enum class IndexStep { Ok, NeedAtoms, Done, Error };
 
   bool ingestTxt();

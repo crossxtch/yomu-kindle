@@ -18,7 +18,7 @@ typedef struct TsBook TsBook;
 typedef void (*TsProgressFn)(void *ctx, int done, int total);
 
 /* font NULL tries the face saved from the 文字 screen, then YOMU_FONT, then
- * the Kindle mincho faces, then gothic, then a few desktop faces. The saved
+ * the Kindle mincho faces, then a few desktop faces. The saved
  * type size is applied either way. home holds the page index and type.txt.
  * w and h are the page. */
 TsBook *ts_open(const char *path, const char *home, const char *font, int w, int h);

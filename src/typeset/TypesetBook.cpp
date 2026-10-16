@@ -123,24 +123,30 @@ bool TypesetBook::hasBookExt(const char* path) {
 }
 
 void TypesetBook::indexPath(char* out, const size_t outSize) const {
-  /* Em and face are part of the name so a size or face change keeps its own index. */
+  /* Em and face are part of the name so a size or face change keeps its own index.
+   * A later face in the same collection mixes its index in. Index 0 stays put. */
+  uint32_t face = pathHash(facePath);
+  if (faceIndex > 0) {
+    face ^= static_cast<uint32_t>(faceIndex) * 0x9E3779B9u;
+  }
   snprintf(out, outSize, "/.crossjp/t_%08lx_e%u_%08lx.bin", static_cast<unsigned long>(pathHash(filepath)),
-           static_cast<unsigned>(layoutOpt.em), static_cast<unsigned long>(pathHash(facePath)));
+           static_cast<unsigned>(layoutOpt.em), static_cast<unsigned long>(face));
 }
 
 void TypesetBook::chapterPath(char* out, const size_t outSize) const {
   snprintf(out, outSize, "/.crossjp/c_%08lx.bin", static_cast<unsigned long>(pathHash(filepath)));
 }
 
-bool TypesetBook::loadFont(const char* fontPath) {
+bool TypesetBook::loadFont(const char* fontPath, const int faceIndex) {
   facePath[0] = '\0';
+  this->faceIndex = faceIndex > 0 ? faceIndex : 0;
   if (!fontPath || fontPath[0] == '\0') {
     error = "font missing";
     return false;
   }
   snprintf(facePath, sizeof(facePath), "%s", fontPath);
-  LOG_INF("TS", "Font %s", fontPath);
-  if (!font.load(fontPath, -1)) {
+  LOG_INF("TS", "Font %s #%d", fontPath, faceIndex);
+  if (!font.load(fontPath, faceIndex)) {
     error = font.lastError()[0] ? font.lastError() : "font missing";
     return false;
   }
@@ -148,7 +154,7 @@ bool TypesetBook::loadFont(const char* fontPath) {
 }
 
 bool TypesetBook::open(const char* path, ts::EpubBook::ProgressFn progress, void* progressCtx, const char* fontPath,
-                      const uint32_t resumePage, const uint32_t resumeAtom) {
+                      const uint32_t resumePage, const uint32_t resumeAtom, const int faceIndex) {
   close();
   hookFn = progress;
   hookCtx = progressCtx;
@@ -167,7 +173,7 @@ bool TypesetBook::open(const char* path, ts::EpubBook::ProgressFn progress, void
   ScratchHeap::release();
 
   const unsigned long tFont = millis();
-  if (!loadFont(fontPath)) {
+  if (!loadFont(fontPath, faceIndex)) {
     LOG_ERR("TS", "Font load failed: %s", error);
     return false;
   }
@@ -661,7 +667,7 @@ bool TypesetBook::atomCacheFresh() const {
     HalFile atom;
     uint32_t magic = 0;
     if (!Storage.openFileForRead("TS", atomPath, atom) || atom.read(&magic, 4) != 4 || magic != ts::kAtomMagic) {
-      return false;  // IRA8 and older; chapter direction may be wrong
+      return false;  // older than IRAA; bold and relative size would be missing
     }
   }
   // A cache-clear used to leave a file of page-breaks, about one byte each.

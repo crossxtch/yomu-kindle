@@ -14,16 +14,7 @@ static int face_count(const State *st) {
   return type_faces(st->host->home, g_faces, TYPE_FACE_MAX);
 }
 
-static int selected_row(int n) {
-  const char *cur = type_font();
-  int i;
-  for (i = 0; i < n; i++) {
-    if (strcmp(g_faces[i].path, cur) == 0) {
-      return i;
-    }
-  }
-  return 0;
-}
+static int selected_row(int n) { return type_used_row(g_faces, n); }
 
 static void list_layout(const Layout *layout, Layout *out) {
   *out = *layout;
@@ -39,7 +30,7 @@ static void show_working(State *st) {
 }
 
 /* The new choice is already saved. On failure, put the previous choice back. */
-static int reopen_type(State *st, int old_step, const char *old_font) {
+static int reopen_type(State *st, int old_step, const char *old_font, int old_index) {
   char path[1024];
   if (!st->book_path[0]) {
     return 1;
@@ -52,7 +43,7 @@ static int reopen_type(State *st, int old_step, const char *old_font) {
     return 1;
   }
   type_set_step(old_step);
-  type_set_font(old_font ? old_font : "");
+  type_set_font(old_font ? old_font : "", old_index);
   if (open_book(st, path) == 0) {
     st->screen = SCR_TYPE;
     snprintf(st->note, sizeof st->note, "この書体は使えません");
@@ -65,11 +56,13 @@ static int reopen_type(State *st, int old_step, const char *old_font) {
 static int change_step(State *st, int delta) {
   int before;
   int old_step;
+  int old_index;
   char old_font[512];
   if (delta == 0) {
     return 0;
   }
   old_step = type_step();
+  old_index = type_face_index();
   snprintf(old_font, sizeof old_font, "%s", type_font());
   before = type_em(st->host->w, st->host->h);
   if (!type_set_step(old_step + delta)) {
@@ -78,21 +71,23 @@ static int change_step(State *st, int delta) {
   if (type_em(st->host->w, st->host->h) == before) {
     return 1;
   }
-  return reopen_type(st, old_step, old_font);
+  return reopen_type(st, old_step, old_font, old_index);
 }
 
 static int change_font(State *st, int index, int n) {
   int old_step;
+  int old_index;
   char old_font[512];
   if (index < 0 || index >= n) {
     return 0;
   }
   old_step = type_step();
+  old_index = type_face_index();
   snprintf(old_font, sizeof old_font, "%s", type_font());
-  if (!type_set_font(g_faces[index].path)) {
+  if (!type_set_font(g_faces[index].path, g_faces[index].index)) {
     return 0;
   }
-  return reopen_type(st, old_step, old_font);
+  return reopen_type(st, old_step, old_font, old_index);
 }
 
 void enter_type(State *st) {
@@ -194,6 +189,10 @@ int handle_type(State *st, const AppEvent *ev) {
         return 0;
       }
       st->screen = SCR_MENU;
+      return 1;
+    }
+    if (id == HOT_UP || id == HOT_DOWN) {
+      page_list(&st->type_cursor, &st->type_top, n, chrome.rows > 0 ? chrome.rows : 1, id == HOT_UP ? -1 : 1);
       return 1;
     }
     if (id >= 0) {

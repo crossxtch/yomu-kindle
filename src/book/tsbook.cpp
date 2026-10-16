@@ -58,25 +58,17 @@ extern "C" TsBook *ts_open_progress(const char *path, const char *home, const ch
       "/var/local/font/mnt/ja_font/fonts/TsukuMinPr5-Bold.ttf",
       "/usr/java/lib/fonts/TBMinchoMedium_213.ttf",
       "/usr/java/lib/fonts/TBMinchoBold_213.ttf",
-      "/usr/java/lib/fonts/TBGothicMed_213.ttf",
-      "/usr/java/lib/fonts/TBGothicBold_213.ttf",
-      "/usr/java/lib/fonts/HeiSeiMaruGoth213_E.ttf",
-      "/usr/java/lib/fonts/HeiSeiMaruGoth213_E_Bold.ttf",
-      "/usr/java/lib/fonts/code2000.ttf",
-      "/usr/java/lib/fonts/Code2000.ttf",
       "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
       "/Library/Fonts/Arial Unicode.ttf",
       "/System/Library/Fonts/Hiragino Sans GB.ttc",
       "/usr/share/fonts/opentype/noto/NotoSerifCJK-Regular.ttc",
-      "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
-      "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
-      "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
       NULL,
   };
   const char *cands[24];
   int nc = 0;
   int i;
   int resume = 0;
+  int saved_slot = -1;
   const char *fail = "font missing";
   int explicit_font;
   TsBook *ts;
@@ -93,6 +85,7 @@ extern "C" TsBook *ts_open_progress(const char *path, const char *home, const ch
     const char *saved = type_font();
     const char *env = getenv("YOMU_FONT");
     if (saved && saved[0] && nc < 24) {
+      saved_slot = nc;
       cands[nc++] = saved;
     }
     if (env && env[0] && nc < 24) {
@@ -121,8 +114,9 @@ extern "C" TsBook *ts_open_progress(const char *path, const char *home, const ch
     if (!file_exists(cands[i])) {
       continue;
     }
+    const int face_index = i == saved_slot ? type_face_index() : -1;
     if (ts->book.open(path, progress ? spine_progress : nullptr, progress ? ts : nullptr, cands[i],
-                      static_cast<uint32_t>(resume), 0)) {
+                      static_cast<uint32_t>(resume), 0, face_index)) {
       g_ts_error[0] = '\0';
       return ts;
     }

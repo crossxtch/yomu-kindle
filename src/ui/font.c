@@ -113,9 +113,6 @@ static int font_score(const char *path) {
   if (contains_ci(path, "ja_font")) {
     return 65;
   }
-  if (contains_ci(base, "code2000")) {
-    return 40;
-  }
   if (contains_ci(base, "hiragino") || contains_ci(base, "heiti") || contains_ci(base, "arial unicode") ||
       contains_ci(base, "sourcehan") || contains_ci(base, "source han") || contains_ci(base, "droid")) {
     return 30;
@@ -199,10 +196,16 @@ static int cand_cmp(const void *a, const void *b) {
 }
 
 static void consider_file(Cand *cands, int *n, const char *path) {
+  const char *base;
   int score;
   int low;
   int i;
   if (!font_ext(path)) {
+    return;
+  }
+  base = strrchr(path, '/');
+  base = base ? base + 1 : path;
+  if (contains_ci(base, "code2000")) {
     return;
   }
   score = font_score(path);
@@ -283,8 +286,6 @@ int yomu_font_open(void) {
       "/usr/java/lib/fonts/TBMinchoBold_213.ttf",
       "/var/local/font/mnt/ja_font/fonts/TsukuMinPr5-Medium.ttf",
       "/var/local/font/mnt/ja_font/fonts/TsukuMinPr5-Bold.ttf",
-      "/usr/java/lib/fonts/code2000.ttf",
-      "/usr/java/lib/fonts/Code2000.ttf",
       "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
       "/Library/Fonts/Arial Unicode.ttf",
       "/System/Library/Fonts/Hiragino Sans GB.ttc",

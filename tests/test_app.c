@@ -1402,7 +1402,7 @@ static int g_type_step;
 static char g_type_face[512];
 
 /* 200x400 is scale 2. The size row is y 32..80. 大 is the right third, x 132..200.
- * Face rows start at y 80. Row 1, the first real face, is y 128..176. */
+ * Face rows start at y 80. The second face is y 128..176. */
 static int type_poll(AppHost *host, AppEvent *event) {
   memset(event, 0, sizeof *event);
   switch (g_type_step++) {
@@ -1457,6 +1457,234 @@ static int type_poll(AppHost *host, AppEvent *event) {
   }
 }
 
+extern int ts_font_faces(const char *path, int *indexes, char labels[][48], int cap);
+
+static int face_named(char labels[][64], int n, const char *want) {
+  int i;
+  for (i = 0; i < n && i < 8; i++) {
+    if (strcmp(labels[i], want) == 0) {
+      return 1;
+    }
+  }
+  return 0;
+}
+
+static int contains_fold(const char *hay, const char *needle) {
+  size_t n = strlen(needle);
+  const char *p;
+  if (!hay || n == 0) {
+    return 0;
+  }
+  for (p = hay; *p; p++) {
+    size_t i = 0;
+    while (i < n && p[i]) {
+      char a = p[i];
+      char b = needle[i];
+      if (a >= 'A' && a <= 'Z') {
+        a = (char)(a - 'A' + 'a');
+      }
+      if (b >= 'A' && b <= 'Z') {
+        b = (char)(b - 'A' + 'a');
+      }
+      if (a != b) {
+        break;
+      }
+      i++;
+    }
+    if (i == n) {
+      return 1;
+    }
+  }
+  return 0;
+}
+
+/* Code2000 stays off the list. A collection is one row per face, and the
+ * chosen index survives type.txt. A file with no index line is face 0. */
+static void test_font_faces(void) {
+  char dir[] = "/tmp/yomu-faces-XXXXXX";
+  char fonts[800];
+  char link[900];
+  char file[800];
+  TypeFace faces[TYPE_FACE_MAX];
+  const char *hiragino =
+      "/System/Library/Fonts/\xe3\x83\x92\xe3\x83\xa9\xe3\x82\xad\xe3\x82\x99\xe3\x83\x8e\xe6\x98\x8e\xe6\x9c\x9d ProN.ttc";
+  int n;
+  int i;
+  FILE *fp;
+  expect(mkdtemp(dir) != NULL, "face dir");
+  type_load(dir);
+  n = type_faces(dir, faces, TYPE_FACE_MAX);
+  expect(n >= 1 && faces[0].path[0], "a book face is installed");
+  expect(strcmp(faces[0].label, "標準") != 0, "face rows are real fonts");
+  {
+    char kept[512];
+    const char *env = getenv("YOMU_FONT");
+    kept[0] = '\0';
+    if (env) {
+      snprintf(kept, sizeof kept, "%s", env);
+    }
+    unsetenv("YOMU_FONT");
+    expect(type_used_row(faces, n) == 0, "an unsaved face uses the first real font");
+    if (kept[0]) {
+      setenv("YOMU_FONT", kept, 1);
+    }
+  }
+  for (i = 0; i < n; i++) {
+    expect(!contains_fold(faces[i].path, "code2000"), "body list has no code2000 path");
+    expect(!contains_fold(faces[i].label, "code2000"), "body list has no code2000 label");
+    expect(!contains_fold(faces[i].path, "goth") && !contains_fold(faces[i].label, "goth"), "body list has no gothic path");
+    expect(strstr(faces[i].label, "ゴシック") == NULL && strstr(faces[i].path, "ゴシック") == NULL,
+           "body list has no gothic label");
+  }
+  if (n >= 2) {
+    snprintf(file, sizeof file, "%s/type.txt", dir);
+    fp = fopen(file, "w");
+    expect(fp != NULL, "write a type.txt without an index");
+    if (fp) {
+      fprintf(fp, "step 2\nfont %s\n", faces[1].path);
+      fclose(fp);
+    }
+    type_load(dir);
+    expect(type_step() == 2, "step survives a file with no index");
+    expect(strcmp(type_font(), faces[1].path) == 0, "font path survives a file with no index");
+    expect(type_face_index() == 0, "a missing index is face 0");
+    expect(type_set_font(faces[1].path, 3) == 1, "save a collection face");
+    type_load(dir);
+    expect(type_face_index() == 3, "saved face index reloads");
+    expect(strcmp(type_font(), faces[1].path) == 0, "saved face path reloads");
+    expect(type_set_font("", 9) == 1, "clear the face");
+    type_load(dir);
+    expect(type_font()[0] == '\0' && type_face_index() == 0, "標準 clears the index");
+  }
+  if (access(hiragino, R_OK) == 0) {
+    int indexes[16];
+    char styles[16][48];
+    int count = ts_font_faces(hiragino, indexes, styles, 16);
+    int hits = 0;
+    int got_index[4] = {0, 0, 0, 0};
+    char seen_label[8][64];
+    expect(count == 4, "hiragino lists four faces");
+    expect(indexes[0] == 0 && indexes[3] == 3, "faces keep their collection index");
+    expect(strcmp(styles[0], "ヒラギノ明朝 ProN W3") == 0, "listed name is ProN W3");
+    snprintf(fonts, sizeof fonts, "%s/fonts", dir);
+    snprintf(link, sizeof link, "%s/HiraginoMinchoProN.ttc", fonts);
+    expect(mkdir(fonts, 0755) == 0, "fonts dir");
+    expect(symlink(hiragino, link) == 0, "link the collection");
+    n = type_faces(dir, faces, TYPE_FACE_MAX);
+    for (i = 0; i < n; i++) {
+      expect(!contains_fold(faces[i].path, "code2000"), "scanned list has no code2000");
+      expect(!contains_fold(faces[i].path, "goth") && !contains_fold(faces[i].label, "goth"),
+             "scanned list has no gothic");
+      expect(strstr(faces[i].label, "ゴシック") == NULL, "scanned list has no gothic label");
+      if (strcmp(faces[i].path, link) != 0) {
+        continue;
+      }
+      if (hits < 8) {
+        if (faces[i].index >= 0 && faces[i].index < 4) {
+          got_index[faces[i].index] = 1;
+        }
+        snprintf(seen_label[hits], sizeof seen_label[hits], "%s", faces[i].label);
+      }
+      hits++;
+    }
+    expect(hits == 4 && hits == count, "each hiragino face is its own row");
+    expect(got_index[0] && got_index[1] && got_index[2] && got_index[3], "rows cover face 0 through 3");
+    expect(face_named(seen_label, hits, "ヒラギノ明朝 ProN W3"), "row ProN W3");
+    expect(face_named(seen_label, hits, "ヒラギノ明朝 Pro W3"), "row Pro W3");
+    expect(face_named(seen_label, hits, "ヒラギノ明朝 ProN W6"), "row ProN W6");
+    expect(face_named(seen_label, hits, "ヒラギノ明朝 Pro W6"), "row Pro W6");
+    unlink(link);
+    rmdir(fonts);
+  }
+  snprintf(file, sizeof file, "%s/type.txt", dir);
+  remove(file);
+  type_load(NULL);
+  rmdir(dir);
+}
+
+/* 200x260 is scale 2 and shows two face rows. 下 sits in the right half of the bar. */
+static int type_page_poll(AppHost *host, AppEvent *event) {
+  memset(event, 0, sizeof *event);
+  switch (g_type_step++) {
+    case 0:
+      event->kind = EV_CONFIRM;
+      return 1;
+    case 1:
+    case 2:
+      event->kind = EV_DOWN;
+      return 1;
+    case 3:
+      event->kind = EV_CONFIRM;
+      return 1;
+    case 4:
+      expect(host->gray[80 * host->w] == 255, "the face above the used one is plain");
+      expect(host->gray[128 * host->w] == 0, "the used face has the bar");
+      event->kind = EV_TAP;
+      event->x = 150;
+      event->y = 208;
+      return 1;
+    case 5:
+      expect(host->gray[80 * host->w] == 0, "the next page shows its first row");
+      expect(host->gray[128 * host->w] == 255, "the paged row below is plain");
+      event->kind = EV_QUIT;
+      return -1;
+    default:
+      expect(0, "type page script did not finish");
+      event->kind = EV_QUIT;
+      return -1;
+  }
+}
+
+static void test_type_page(void) {
+  char dir[] = "/tmp/yomu-typepage-XXXXXX";
+  char book_path[768];
+  TypeFace faces[TYPE_FACE_MAX];
+  int n;
+  int side = 200;
+  int small_pages = 0;
+  uint8_t *gray;
+  AppHost host;
+  expect(mkdtemp(dir) != NULL, "type page dir");
+  type_load(dir);
+  n = type_faces(dir, faces, TYPE_FACE_MAX);
+  if (n < 3) {
+    type_load(NULL);
+    rmdir(dir);
+    return;
+  }
+  expect(type_set_font(faces[1].path, faces[1].index) == 1, "save the second face");
+  expect(type_used_row(faces, n) == 1, "the saved face is the highlighted row");
+  snprintf(book_path, sizeof book_path, "%s/Pages.txt", dir);
+  expect(write_fitted(book_path, dir, side, 260, 2, 4, &small_pages) == 0, "type page book");
+  g_page_n = (size_t)side * 260;
+  gray = malloc(g_page_n);
+  expect(gray != NULL, "type page gray");
+  if (!gray) {
+    return;
+  }
+  memset(gray, 255, g_page_n);
+  memset(&host, 0, sizeof host);
+  host.w = side;
+  host.h = 260;
+  host.gray = gray;
+  host.full_every = 8;
+  host.root = dir;
+  host.home = dir;
+  host.present = fake_present;
+  host.poll = type_page_poll;
+  g_type_step = 0;
+  expect(app_run(&host, book_path) == 0, "type page run");
+  expect(g_type_step == 6, "type page script finished");
+  free(gray);
+  remove(book_path);
+  snprintf(book_path, sizeof book_path, "%s/type.txt", dir);
+  remove(book_path);
+  snprintf(book_path, sizeof book_path, "%s/progress.tsv", dir);
+  remove(book_path);
+  type_load(NULL);
+  rmdir(dir);
+}
+
 static void test_type(void) {
   char dir[] = "/tmp/yomu-type-XXXXXX";
   char book_path[256];
@@ -1490,7 +1718,8 @@ static void test_type(void) {
   expect(type_set_step(0) == 1, "standard for the screen test");
 
   nfaces = type_faces(dir, faces, TYPE_FACE_MAX);
-  expect(nfaces >= 2 && faces[1].path[0], "a book face is installed");
+  expect(nfaces >= 2 && faces[0].path[0] && faces[1].path[0], "a book face is installed");
+  expect(strcmp(faces[0].label, "標準") != 0, "the face list has no 標準 row");
   snprintf(g_type_face, sizeof g_type_face, "%s", nfaces >= 2 ? faces[1].path : "");
 
   g_page_n = (size_t)side * 400;
@@ -2060,6 +2289,8 @@ int main(void) {
   test_index_continues();
   test_index_idle();
   test_jump_page();
+  test_font_faces();
+  test_type_page();
   test_type();
   test_fileserver();
   if (g_failed) {
