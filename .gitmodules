@@ -1,0 +1,3 @@
+[submodule "reference/koreader"]
+	path = reference/koreader
+	url = https://github.com/koreader/koreader.git
