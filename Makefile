@@ -27,7 +27,17 @@ OBJS := \
 	build/host/book/progress.o \
 	build/host/net/http.o \
 	build/host/net/fileserver.o \
-	build/host/filepage.o
+	build/host/filepage.o \
+	build/host/puff.o \
+	build/host/ft/base/ftsystem.o \
+	build/host/ft/base/ftinit.o \
+	build/host/ft/base/ftdebug.o \
+	build/host/ft/base/ftbase.o \
+	build/host/ft/base/ftbitmap.o \
+	build/host/ft/base/ftmm.o \
+	build/host/ft/sfnt/sfnt.o \
+	build/host/ft/truetype/truetype.o \
+	build/host/ft/smooth/smooth.o
 
 .PHONY: all clean
 
