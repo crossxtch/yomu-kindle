@@ -201,7 +201,6 @@ void testFace() {
   /* Arial Unicode has a vert feature and Japanese glyphs. Hiragino is checked
    * separately so this assertion stays on the vert substitution. */
   const char *paths[] = {
-      "/System/Library/Fonts/\xe3\x83\x92\xe3\x83\xa9\xe3\x82\xad\xe3\x82\x99\xe3\x83\x8e\xe6\x98\x8e\xe6\x9c\x9d ProN.ttc",
       "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
       "/Library/Fonts/Arial Unicode.ttf",
       nullptr,
@@ -247,6 +246,39 @@ void testFace() {
   if (slid < 8) {
     std::fprintf(stderr, "FAIL typeset: half-em 「 ink=%d\n", slid);
     g_fails++;
+  }
+}
+
+void testCollection() {
+  /* NFD: ヒ + combining dakuten. Four CFF faces, one row each. */
+  const char *path =
+      "/System/Library/Fonts/\xe3\x83\x92\xe3\x83\xa9\xe3\x82\xad\xe3\x82\x99\xe3\x83\x8e\xe6\x98\x8e\xe6\x9c\x9d ProN.ttc";
+  int indexes[16];
+  char labels[16][48];
+  int n;
+  int i;
+  if (access(path, R_OK) != 0) {
+    std::fprintf(stderr, "skip collection face\n");
+    return;
+  }
+  n = ts_font_faces(path, indexes, labels, 16);
+  check(n == 4, "collection lists each japanese face");
+  check(std::strcmp(labels[0], "ヒラギノ明朝 ProN W3") == 0, "first face is ProN W3");
+  check(std::strcmp(labels[1], "ヒラギノ明朝 Pro W3") == 0, "second face is Pro W3");
+  check(std::strcmp(labels[2], "ヒラギノ明朝 ProN W6") == 0, "third face is ProN W6");
+  check(std::strcmp(labels[3], "ヒラギノ明朝 Pro W6") == 0, "fourth face is Pro W6");
+  for (i = 0; i < n; ++i) {
+    int j;
+    for (j = 0; j < i; ++j) {
+      check(indexes[i] != indexes[j], "collection face indexes differ");
+    }
+  }
+  if (n >= 2) {
+    XgfFont first;
+    XgfFont last;
+    check(first.load(path, indexes[0]), "load the first collection face");
+    check(last.load(path, indexes[n - 1]), "load the last collection face");
+    check(first.advancePx(0x3042, 48) > 0 && last.advancePx(0x3042, 48) > 0, "each collection face has あ");
   }
 }
 
@@ -473,6 +505,7 @@ extern "C" int test_typeset_rules(void) {
   testLayout();
   testToc();
   testFace();
+  testCollection();
   testColumnPicture();
   testPictures();
   return g_fails;

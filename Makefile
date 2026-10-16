@@ -84,6 +84,10 @@ FT_SRCS := \
 	third_party/freetype/src/base/ftbase.c \
 	third_party/freetype/src/base/ftbitmap.c \
 	third_party/freetype/src/base/ftmm.c \
+	third_party/freetype/src/psnames/psnames.c \
+	third_party/freetype/src/psaux/psaux.c \
+	third_party/freetype/src/pshinter/pshinter.c \
+	third_party/freetype/src/cff/cff.c \
 	third_party/freetype/src/sfnt/sfnt.c \
 	third_party/freetype/src/truetype/truetype.c \
 	third_party/freetype/src/smooth/smooth.c
