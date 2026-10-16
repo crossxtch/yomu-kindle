@@ -22,7 +22,9 @@ OBJS := \
 	build/host/util/utf8.o \
 	build/host/ui/draw.o \
 	build/host/ui/font.o \
-	build/host/stb_truetype.o
+	build/host/stb_truetype.o \
+	build/host/book/books.o \
+	build/host/book/progress.o
 
 .PHONY: all clean
 
