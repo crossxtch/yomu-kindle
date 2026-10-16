@@ -47,6 +47,8 @@ bool pictureSize(const char* path, uint16_t id, int* w, int* h);
 
 /* Fit image `id` inside the page. 0 is black and 255 is white. Margins stay white. */
 bool picturePaint(const char* path, uint16_t id, uint8_t* gray, int pageW, int pageH);
+/* Same fit, inside a band that leaves `marginY` white at the top and bottom. */
+bool picturePaintInset(const char* path, uint16_t id, uint8_t* gray, int pageW, int pageH, int marginY);
 
 /* Draw image `id` into the box at (x, y). The rest of the page is left alone. */
 bool picturePaintBox(const char* path, uint16_t id, uint8_t* gray, int pageW, int pageH, int x, int y, int boxW,

@@ -524,7 +524,7 @@ bool TypesetBook::writePartialHeader() {
     error = "index write";
     return false;
   }
-  const uint32_t magic = kIndexPartial;
+  const uint32_t magic = kIndexPartial;  // TIDB. A TID9 index still has the old column length.
   const uint32_t atomSz = sourceSize;
   const uint32_t srcSz = bookSrcSize;
   const uint16_t em = layoutOpt.em;
@@ -605,7 +605,7 @@ bool TypesetBook::promoteIndex() {
     error = "index write";
     return false;
   }
-  const uint32_t magic = kIndexMagic;
+  const uint32_t magic = kIndexMagic;  // TIDA. A TID9 index still has the old column length.
   const uint32_t atomSz = sourceSize;
   const uint32_t srcSz = bookSrcSize;
   const uint16_t em = layoutOpt.em;

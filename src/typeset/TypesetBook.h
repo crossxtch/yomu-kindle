@@ -66,14 +66,14 @@ class TypesetBook {
   static bool hasBookExt(const char* path);
 
  private:
-  // TID9 is a finished index: 24-byte header, then 7-byte records.
-  // TID: keeps that header and adds a 24-byte tail so a chapter window can
-  // resume. Records then start at byte 48. Promotion back to TID9 only
+  // TIDA is a finished index: 24-byte header, then 7-byte records.
+  // TIDB keeps that header and adds a 24-byte tail so a chapter window can
+  // resume. Records then start at byte 48. Promotion back to TIDA only
   // happens for a complete prefix that starts at the first atom.
-  // TID7 and TID8 are rebuilt from the atoms: a small picture now shares the
-  // column with the text, so the old page breaks are stale.
-  static constexpr uint32_t kIndexMagic = 0x39444954u;
-  static constexpr uint32_t kIndexPartial = 0x3A444954u;
+  // TID9 and older are rebuilt from the atoms. The Y margin changed the
+  // page breaks, and the record size is still 7 bytes.
+  static constexpr uint32_t kIndexMagic = 0x41444954u;
+  static constexpr uint32_t kIndexPartial = 0x42444954u;
   static constexpr uint32_t kIndexPayload = 24;
   static constexpr uint32_t kPartialPayload = 48;
   static constexpr uint32_t kFlagIngest = 1u;

@@ -176,7 +176,19 @@ bool TypesetBook::open(const char* path, ts::EpubBook::ProgressFn progress, void
   layoutOpt.width = static_cast<int16_t>(BoardConfig::ACTIVE.displayHeight);
   layoutOpt.height = static_cast<int16_t>(BoardConfig::ACTIVE.displayWidth);
   layoutOpt.em = font.emPx();
-  layoutOpt.margin = 0;
+  // Rotation 3 leaves the top 4 rows out of a partial update. 16px at the top
+  // and the bottom keeps that band blank, and the columns stay even.
+  {
+    int16_t marginY = 16;
+    const int16_t em = layoutOpt.em > 0 ? layoutOpt.em : 16;
+    if (layoutOpt.height - marginY * 2 < em) {
+      marginY = static_cast<int16_t>((layoutOpt.height - em) / 2);
+      if (marginY < 0) {
+        marginY = 0;
+      }
+    }
+    layoutOpt.margin = marginY;
+  }
   layoutOpt.hasRuby = true;
   layoutOpt.compactColumns = false;
   layoutOpt.mode = ts::WritingMode::VerticalRl;

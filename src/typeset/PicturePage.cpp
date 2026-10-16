@@ -288,7 +288,8 @@ bool pictureSize(const char* path, const uint16_t id, int* w, int* h) {
   return ok;
 }
 
-bool picturePaint(const char* path, const uint16_t id, uint8_t* gray, const int pageW, const int pageH) {
+bool picturePaintInset(const char* path, const uint16_t id, uint8_t* gray, const int pageW, const int pageH,
+                       const int marginY) {
   if (!gray || pageW < 1 || pageH < 1) {
     return false;
   }
@@ -298,9 +299,22 @@ bool picturePaint(const char* path, const uint16_t id, uint8_t* gray, const int 
   if (!loadGray(path, id, &pix, &w, &h)) {
     return false;
   }
-  fitGray(gray, pageW, pageH, pix, w, h);
+  int my = marginY;
+  if (my < 0 || pageH - my * 2 < 1) {
+    my = 0;
+  }
+  if (my == 0) {
+    fitGray(gray, pageW, pageH, pix, w, h);
+  } else {
+    memset(gray, 255, static_cast<size_t>(pageW) * static_cast<size_t>(pageH));
+    fitGray(gray + static_cast<size_t>(my) * static_cast<size_t>(pageW), pageW, pageH - my * 2, pix, w, h);
+  }
   stbi_image_free(pix);
   return true;
+}
+
+bool picturePaint(const char* path, const uint16_t id, uint8_t* gray, const int pageW, const int pageH) {
+  return picturePaintInset(path, id, gray, pageW, pageH, 0);
 }
 
 bool picturePaintBox(const char* path, const uint16_t id, uint8_t* gray, const int pageW, const int pageH, const int x,

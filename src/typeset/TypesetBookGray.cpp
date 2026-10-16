@@ -79,7 +79,7 @@ bool TypesetBook::renderGray(uint8_t* gray, const int w, const int h, const uint
   }
   memset(gray, 255, static_cast<size_t>(w) * static_cast<size_t>(h));
   if (loadedPicture != 0) {
-    if (!ts::picturePaint(picturePath, loadedPicture, gray, w, h)) {
+    if (!ts::picturePaintInset(picturePath, loadedPicture, gray, w, h, layoutOpt.margin)) {
       LOG_INF("TS", "picture %u blank", static_cast<unsigned>(loadedPicture));
     }
     extendAhead(globalPage, 2);

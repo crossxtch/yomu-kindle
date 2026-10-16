@@ -41,8 +41,15 @@ bool PageLayouter::recomputeGrid() {
   rubyGutter = opt.compactColumns && !opt.hasRuby ? static_cast<int16_t>(std::max(1, opt.em / 5))
                                                   : static_cast<int16_t>((opt.em + 1) / 2);
   pitch = static_cast<int16_t>(opt.em + rubyGutter);
-  const int16_t innerW = static_cast<int16_t>(opt.width - opt.margin * 2);
-  const int16_t innerH = static_cast<int16_t>(opt.height - opt.margin * 2);
+  const int16_t innerW = opt.width;
+  int16_t marginY = opt.margin;
+  if (marginY < 0) {
+    marginY = 0;
+  }
+  if (opt.height - marginY * 2 < 1) {
+    marginY = 0;
+  }
+  const int16_t innerH = static_cast<int16_t>(opt.height - marginY * 2);
 
   if (opt.mode == WritingMode::VerticalRl) {
     const int nCols = pitch > 0 ? innerW / pitch : 0;
@@ -54,9 +61,9 @@ bool PageLayouter::recomputeGrid() {
     const int16_t usedH = static_cast<int16_t>(nChars * opt.em);
     const int16_t padLeft = static_cast<int16_t>((innerW - usedW) / 2);
     const int16_t padTop = static_cast<int16_t>((innerH - usedH) / 2);
-    colTop = static_cast<int16_t>(opt.margin + padTop);
+    colTop = static_cast<int16_t>(marginY + padTop);
     colBottom = static_cast<int16_t>(colTop + usedH);
-    hanmenLeft = static_cast<int16_t>(opt.margin + padLeft);
+    hanmenLeft = padLeft;
     firstColX = static_cast<int16_t>(hanmenLeft + usedW - pitch);
   } else {
     const int nChars = opt.em > 0 ? innerW / opt.em : 0;
@@ -68,8 +75,8 @@ bool PageLayouter::recomputeGrid() {
     const int16_t usedH = static_cast<int16_t>(nLines * pitch);
     const int16_t padLeft = static_cast<int16_t>((innerW - usedW) / 2);
     const int16_t padTop = static_cast<int16_t>((innerH - usedH) / 2);
-    firstLineY = static_cast<int16_t>(opt.margin + padTop);
-    hanmenLeft = static_cast<int16_t>(opt.margin + padLeft);
+    firstLineY = static_cast<int16_t>(marginY + padTop);
+    hanmenLeft = padLeft;
     lineRight = static_cast<int16_t>(hanmenLeft + usedW);
     hanmenBottom = static_cast<int16_t>(firstLineY + usedH);
   }

@@ -1320,20 +1320,38 @@ static void test_typeset(void) {
     page = malloc((size_t)w * (size_t)h);
     expect(page != NULL, "picture page buffer");
     if (page) {
+      const int edge = h > 32 ? 16 : 0;
+      const int inner = w * (h - edge * 2);
+      int edges_clear = 0;
       for (i = 0; i < 6; i++) {
         int ink;
+        int y;
+        int x;
+        int clear = 1;
         memset(page, 255, (size_t)w * (size_t)h);
         if (ts_render(book, i, page, w, h) != 1) {
           break;
         }
         ink = ink_count(page, w * h);
-        if (ink > (w * h) / 2) {
+        if (ink > inner / 2) {
           heavy = 1;
+          for (y = 0; y < edge; y++) {
+            for (x = 0; x < w; x++) {
+              if (page[(size_t)y * (size_t)w + (size_t)x] < 250 ||
+                  page[(size_t)(h - 1 - y) * (size_t)w + (size_t)x] < 250) {
+                clear = 0;
+              }
+            }
+          }
+          if (clear) {
+            edges_clear = 1;
+          }
         } else if (ink > 8) {
           textish = 1;
         }
       }
       expect(heavy, "picture page is mostly ink");
+      expect(edges_clear, "picture keeps the top and bottom clear");
       expect(textish, "text beside the picture still has a page");
       free(page);
     }

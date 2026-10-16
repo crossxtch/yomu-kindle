@@ -80,7 +80,7 @@ struct LayoutOptions {
   int16_t width = 528;
   int16_t height = 792;
   uint8_t em = 47;
-  int16_t margin = 0;
+  int16_t margin = 0;  // top and bottom only, in pixels. The sides stay at the edge.
   bool compactColumns = false;
   bool hasRuby = true;
   WritingMode mode = WritingMode::VerticalRl;
