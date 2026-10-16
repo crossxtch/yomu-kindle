@@ -1949,6 +1949,100 @@ static void test_long_spine(void) {
   free(ents);
 }
 
+static int g_here_step;
+
+/* 120x280 is scale 2: header 32, row 48. The cursor is a black bar at x 0. */
+static int here_poll(AppHost *host, AppEvent *event) {
+  int w = host->w;
+  int y0 = 32 * w;
+  int y1 = (32 + 48) * w;
+  int y2 = (32 + 48 * 2) * w;
+  memset(event, 0, sizeof *event);
+  switch (g_here_step++) {
+    case 0:
+      expect(ink_count(host->gray, host->w * host->h) > 0, "later chapter opens on its page");
+      event->kind = EV_CONFIRM;
+      return 1;
+    case 1:
+      event->kind = EV_DOWN;
+      return 1;
+    case 2:
+      event->kind = EV_CONFIRM;
+      return 1;
+    case 3:
+      expect(host->gray[0] == 255, "chapter list header stays clear");
+      expect(host->gray[y2] == 0, "current chapter is highlighted");
+      expect(host->gray[y0] == 255 && host->gray[y1] == 255, "earlier chapters stay clear");
+      event->kind = EV_QUIT;
+      return -1;
+    default:
+      expect(0, "current chapter script did not finish");
+      event->kind = EV_QUIT;
+      return -1;
+  }
+}
+
+static void test_current_chapter(void) {
+  char dir[] = "/tmp/yomu-here-XXXXXX";
+  char book_path[256];
+  TsBook *book;
+  int page = -1;
+  int start = -1;
+  int end = -1;
+  int first = -1;
+  const int width = 120;
+  const int height = 280;
+  expect(mkdtemp(dir) != NULL, "current chapter dir");
+  snprintf(book_path, sizeof book_path, "%s/Three.epub", dir);
+  expect(write_three_chapter_epub(book_path) == 0, "current chapter epub");
+  book = ts_open(book_path, dir, NULL, width, height);
+  expect(book != NULL, ts_error(NULL));
+  if (!book) {
+    remove(book_path);
+    rmdir(dir);
+    return;
+  }
+  expect(ts_open_chapter(book, 2, &page) == 1, "third chapter page");
+  expect(ts_chapter(book, 0, NULL, 0, &first, &end) == 1 && first >= 0, "first chapter page");
+  expect(ts_chapter(book, 2, NULL, 0, &start, &end) == 1 && start == page, "third chapter starts there");
+  expect(start > first, "third chapter is a later page");
+  expect(progress_save(dir, book_path, page) == 0, "save the third chapter");
+  ts_close(book);
+
+  g_page_n = (size_t)width * (size_t)height;
+  {
+    uint8_t *gray = malloc(g_page_n);
+    AppHost host;
+    expect(gray != NULL, "current chapter gray");
+    if (!gray) {
+      remove(book_path);
+      rmdir(dir);
+      return;
+    }
+    memset(gray, 255, g_page_n);
+    memset(&host, 0, sizeof host);
+    host.w = width;
+    host.h = height;
+    host.gray = gray;
+    host.full_every = 8;
+    host.root = dir;
+    host.home = dir;
+    host.present = fake_present;
+    host.poll = here_poll;
+    g_here_step = 0;
+    expect(app_run(&host, book_path) == 0, "current chapter run");
+    expect(g_here_step == 4, "current chapter script finished");
+    free(gray);
+  }
+  remove(book_path);
+  {
+    char prog[256];
+    snprintf(prog, sizeof prog, "%s/progress.tsv", dir);
+    remove(prog);
+  }
+  rmdir(dir);
+}
+
 int main(void) {
   test_rotate();
   test_progress_and_scan();
@@ -1962,6 +2056,7 @@ int main(void) {
   test_sleep_stays();
   test_tap_buttons();
   test_chapter_ranges();
+  test_current_chapter();
   test_index_continues();
   test_index_idle();
   test_jump_page();

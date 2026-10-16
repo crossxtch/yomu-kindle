@@ -123,6 +123,8 @@ int handle_reader(State *st, const AppEvent *ev);
 
 void paint_menu(State *st);
 int handle_menu(State *st, const AppEvent *ev);
+/* Put the chapter cursor on the chapter that contains the open page. */
+void chapters_focus_current(State *st);
 void paint_chapters(State *st);
 int handle_chapters(State *st, const AppEvent *ev);
 void paint_jump(State *st);

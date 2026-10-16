@@ -137,8 +137,7 @@ static int activate_menu(State *st, int id) {
       return 1;
     case ACT_CHAPTERS:
       st->screen = SCR_CHAP;
-      st->chap_cursor = 0;
-      st->chap_top = 0;
+      chapters_focus_current(st);
       return 1;
     case ACT_LIBRARY:
       close_book(st);

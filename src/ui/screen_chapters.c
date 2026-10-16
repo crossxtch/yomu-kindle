@@ -8,6 +8,37 @@
 #include <stdio.h>
 #include <string.h>
 
+/* Named chapter that contains page. A page before the first mark stays on chapter 0. */
+static int chapter_for_page(const State *st, int page) {
+  int count = reading_chapter_count(st);
+  int found = 0;
+  int i;
+  if (page < 0) {
+    page = 0;
+  }
+  for (i = 0; i < count; i++) {
+    int start = -1;
+    int end = -1;
+    if (!reading_chapter(st, i, NULL, 0, &start, &end)) {
+      break;
+    }
+    if (start < 0 || page < start) {
+      break;
+    }
+    found = i;
+    if (end >= 0 && page <= end) {
+      break;
+    }
+  }
+  return found;
+}
+
+void chapters_focus_current(State *st) {
+  int index = chapter_for_page(st, st->page);
+  st->chap_cursor = index;
+  st->chap_top = index;
+}
+
 void paint_chapters(State *st) {
   AppHost *host = st->host;
   Layout layout = layout_of(host->w, host->h);
