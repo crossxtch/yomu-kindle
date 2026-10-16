@@ -17,7 +17,16 @@ extern "C" {
 
 struct TsBook {
   TypesetBook book;
+  TsProgressFn progress;
+  void *progress_ctx;
 };
+
+static void spine_progress(void *ctx, uint16_t done, uint16_t total) {
+  TsBook *ts = static_cast<TsBook *>(ctx);
+  if (ts && ts->progress) {
+    ts->progress(ts->progress_ctx, done, total);
+  }
+}
 
 static char g_ts_error[160] = "not open";
 
@@ -39,6 +48,11 @@ static int font_error(const char *err) {
 }
 
 extern "C" TsBook *ts_open(const char *path, const char *home, const char *font, int w, int h) {
+  return ts_open_progress(path, home, font, w, h, NULL, NULL);
+}
+
+extern "C" TsBook *ts_open_progress(const char *path, const char *home, const char *font, int w, int h,
+                                    TsProgressFn progress, void *progress_ctx) {
   static const char *faces[] = {
       "/var/local/font/mnt/ja_font/fonts/TsukuMinPr5-Medium.ttf",
       "/var/local/font/mnt/ja_font/fonts/TsukuMinPr5-Bold.ttf",
@@ -101,11 +115,14 @@ extern "C" TsBook *ts_open(const char *path, const char *home, const char *font,
     set_error("nomem");
     return NULL;
   }
+  ts->progress = progress;
+  ts->progress_ctx = progress_ctx;
   for (i = 0; i < nc; i++) {
     if (!file_exists(cands[i])) {
       continue;
     }
-    if (ts->book.open(path, nullptr, nullptr, cands[i], static_cast<uint32_t>(resume), 0)) {
+    if (ts->book.open(path, progress ? spine_progress : nullptr, progress ? ts : nullptr, cands[i],
+                      static_cast<uint32_t>(resume), 0)) {
       g_ts_error[0] = '\0';
       return ts;
     }
@@ -129,6 +146,26 @@ extern "C" int ts_pages(TsBook *book) {
 }
 
 extern "C" int ts_done(TsBook *book) { return book && book->book.isOpen() && book->book.buildFinished(); }
+
+extern "C" int ts_spine(const TsBook *book, int *done, int *total) {
+  if (!book || !book->book.isOpen()) {
+    return 0;
+  }
+  if (done) {
+    *done = book->book.spineDone();
+  }
+  if (total) {
+    *total = book->book.spineTotal();
+  }
+  return 1;
+}
+
+extern "C" int ts_index_step(TsBook *book) {
+  if (!book || !book->book.isOpen()) {
+    return 0;
+  }
+  return book->book.indexStep();
+}
 
 extern "C" int ts_render(TsBook *book, int global_page, uint8_t *gray, int w, int h) {
   if (!book || !gray || global_page < 0) {

@@ -12,6 +12,12 @@
 #include <strings.h>
 
 static void drop_page_cache(State *st);
+static int spine_line(const State *st, char *out, size_t out_n);
+static void draw_spine_badge(State *st, const char *text);
+
+static void open_progress(void *ctx, int done, int total) {
+  paint_opening(ctx, done, total);
+}
 
 /* 1 when the typeset page has any ink. A failed render counts as ink so a
  * blank cover is the only thing we skip. */
@@ -98,7 +104,12 @@ int open_book(State *st, const char *path) {
     return -1;
   }
   release_open(st);
-  TsBook *ts = ts_open(path, st->host->home, NULL, st->host->w, st->host->h);
+  st->index_shown = 0;
+  st->index_done = -1;
+  st->index_total = -1;
+  st->index_stall = 0;
+  st->index_badge = 0;
+  TsBook *ts = ts_open_progress(path, st->host->home, NULL, st->host->w, st->host->h, open_progress, st);
   if (!ts) {
     snprintf(st->note, sizeof st->note, "%s", ts_error(NULL));
     yomu_log("open failed %s (%s)", path, ts_error(NULL));
@@ -120,8 +131,13 @@ int open_book(State *st, const char *path) {
    * reader, but start at the first page that actually has ink. */
   if (st->page == 0 && pages > 1) {
     int guard = pages < 8 ? pages : 8;
+    int done = 0;
+    int total = 0;
     while (st->page + 1 < guard && !typeset_has_ink(ts, st->page, st->host->w, st->host->h)) {
       st->page++;
+      if (ts_spine(ts, &done, &total)) {
+        paint_opening(st, done, total);
+      }
     }
   }
   st->since_full = 0;
@@ -244,6 +260,131 @@ static void reader_refresh_advance(State *st, int full) {
   }
 }
 
+static int badge_band(const State *st) {
+  Layout layout = layout_of(st->host->w, st->host->h);
+  int band = 8 * layout.scale + layout.pad;
+  if (band > st->host->h) {
+    band = st->host->h;
+  }
+  if (band < 1) {
+    band = 1;
+  }
+  return band;
+}
+
+static int spine_line(const State *st, char *out, size_t out_n) {
+  int done = 0;
+  int total = 0;
+  if (!st->ts || ts_done(st->ts) || !ts_spine(st->ts, &done, &total)) {
+    return 0;
+  }
+  if (total <= 0 || done >= total) {
+    return 0;
+  }
+  snprintf(out, out_n, "%d / %d", done, total);
+  return 1;
+}
+
+static void draw_spine_badge(State *st, const char *text) {
+  AppHost *host = st->host;
+  Layout layout = layout_of(host->w, host->h);
+  int band = badge_band(st);
+  int y = host->h - band;
+  int tw = draw_text_width(layout.scale, text);
+  int th = 8 * layout.scale;
+  int x = (host->w - tw) / 2;
+  int ty = y + (band - th) / 2;
+  if (x < 0) {
+    x = 0;
+  }
+  if (ty < y) {
+    ty = y;
+  }
+  draw_fill(host->gray, host->w, host->h, host->w, 0, y, host->w, band, 255);
+  draw_text(host->gray, host->w, host->h, host->w, x, ty, layout.scale, text, 0);
+}
+
+void paint_opening(State *st, int done, int total) {
+  AppHost *host;
+  Layout layout;
+  int count_y;
+  int line_h;
+  int first;
+  char line[32];
+  if (!st || !st->host || !st->host->present) {
+    return;
+  }
+  if (st->index_shown && done == st->index_done && total == st->index_total) {
+    return;
+  }
+  host = st->host;
+  layout = layout_of(host->w, host->h);
+  count_y = layout.pad + 8 * layout.scale + layout.pad;
+  line_h = 8 * layout.scale + layout.pad;
+  first = !st->index_shown;
+  if (first) {
+    draw_clear(host->gray, host->w, host->h, host->w, 255);
+    draw_text(host->gray, host->w, host->h, host->w, layout.pad, layout.pad, layout.scale, "開いています…", 0);
+  }
+  if (total > 0) {
+    snprintf(line, sizeof line, "%d / %d", done, total);
+    if (count_y + line_h > host->h) {
+      line_h = host->h - count_y;
+    }
+    if (line_h < 1) {
+      line_h = 1;
+      count_y = 0;
+    }
+    draw_fill(host->gray, host->w, host->h, host->w, 0, count_y, host->w, line_h, 255);
+    draw_text(host->gray, host->w, host->h, host->w, layout.pad, count_y, layout.scale, line, 0);
+  }
+  st->index_shown = 1;
+  st->index_done = done;
+  st->index_total = total;
+  if (first) {
+    host->present(host, 0, 0, 0, 0, 1);
+  } else if (total > 0) {
+    host->present(host, 0, count_y, host->w, line_h, 0);
+  }
+  if (total > 0) {
+    yomu_log("index %d/%d", done, total);
+  }
+}
+
+int present_spine_badge(State *st) {
+  AppHost *host;
+  char line[32];
+  int band;
+  int y;
+  int show;
+  if (!st || !st->host || !st->host->present || st->screen != SCR_READ) {
+    return 1;
+  }
+  host = st->host;
+  band = badge_band(st);
+  y = host->h - band;
+  show = spine_line(st, line, sizeof line);
+  if (!show) {
+    if (!st->index_badge) {
+      return 1;
+    }
+    if (!st->cur_gray || st->cur_page != st->page || st->cur_w != (uint16_t)host->w ||
+        st->cur_h != (uint16_t)host->h) {
+      st->index_badge = 0;
+      return 0;
+    }
+    memcpy(host->gray + (size_t)y * (size_t)host->w, st->cur_gray + (size_t)y * (size_t)host->w,
+           (size_t)band * (size_t)host->w);
+    st->index_badge = 0;
+    host->present(host, 0, y, host->w, band, 0);
+    return 1;
+  }
+  draw_spine_badge(st, line);
+  st->index_badge = 1;
+  host->present(host, 0, y, host->w, band, 0);
+  return 1;
+}
+
 void paint_reader(State *st, int *full, int *rx, int *ry, int *rw, int *rh) {
   AppHost *host = st->host;
   *full = st->since_full <= 0;
@@ -277,6 +418,15 @@ void paint_reader(State *st, int *full, int *rx, int *ry, int *rw, int *rh) {
     return;
   }
   memcpy(host->gray, page, (size_t)pw * (size_t)ph);
+  {
+    char line[32];
+    if (spine_line(st, line, sizeof line)) {
+      draw_spine_badge(st, line);
+      st->index_badge = 1;
+    } else {
+      st->index_badge = 0;
+    }
+  }
   reader_refresh_advance(st, *full);
 }
 

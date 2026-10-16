@@ -947,12 +947,49 @@ bool TypesetBook::indexUntil(const uint32_t target, ts::EpubBook::ProgressFn pro
     } else {
       idle = 0;
     }
+    if (progress && spineCount > 0) {
+      progress(progressCtx, nextSpine, spineCount);
+    }
   }
   if (!frontFrozen) {
     freezeFront();
   }
   suspendIndex();
   return pageCovers(target) || buildFinished();
+}
+
+int TypesetBook::indexStep() {
+  if (!opened || extendFailed || buildFinished() || (coversEnd && ingestDone)) {
+    return 0;
+  }
+  const uint16_t pages0 = nPages;
+  const uint16_t spine0 = nextSpine;
+  const uint32_t indexed0 = indexedAtom;
+  const IndexStep step = indexMore(8, 0);
+  if (step == IndexStep::Error) {
+    extendFailed = true;
+    suspendIndex();
+    return 0;
+  }
+  if (step == IndexStep::NeedAtoms) {
+    if (!ingestSlice(1, nullptr, nullptr)) {
+      extendFailed = true;
+      suspendIndex();
+      return 0;
+    }
+  }
+  if (!frontFrozen) {
+    freezeFront();
+  }
+  suspendIndex();
+  const bool advanced = nPages != pages0 || nextSpine != spine0 || indexedAtom != indexed0;
+  if (!advanced) {
+    return 0;
+  }
+  if (buildFinished() || (coversEnd && ingestDone)) {
+    return 0;
+  }
+  return 1;
 }
 
 bool TypesetBook::prependOne() {
@@ -1154,6 +1191,10 @@ bool TypesetBook::ensureChapter(const uint16_t chapterIndex, uint32_t& globalPag
                                void* progressCtx) {
   if (!opened || chapterIndex >= chapterMarks.size()) {
     return false;
+  }
+  if (!progress) {
+    progress = hookFn;
+    progressCtx = hookCtx;
   }
   int guard = 0;
   while (chapterMarks[chapterIndex].atomOff == 0xFFFFFFFFu && !ingestDone && guard < 512) {

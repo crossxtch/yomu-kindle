@@ -41,6 +41,11 @@ class TypesetBook {
   // Lay out a few pages past `globalPage`, ingesting the next spine item when
   // the atom prefix runs out. One idle tick.
   bool extendAhead(uint32_t globalPage, uint16_t ahead);
+  // One forward step of the rest of the book: a few pages, or the next spine
+  // item when those pages run out. 1 when more forward work remains.
+  int indexStep();
+  uint16_t spineDone() const { return nextSpine; }
+  uint16_t spineTotal() const { return spineCount; }
   bool ensureGlobal(uint32_t globalPage, ts::EpubBook::ProgressFn progress = nullptr, void* progressCtx = nullptr);
   bool ensureChapter(uint16_t chapterIndex, uint32_t& globalPage, ts::EpubBook::ProgressFn progress = nullptr,
                      void* progressCtx = nullptr);
@@ -128,6 +133,9 @@ class TypesetBook {
   uint16_t loadedCount = 0;
   uint16_t loadedPicture = 0;
   uint8_t* pictureBits = nullptr;  // borrowed ScratchHeap page, valid only while painting
+  // Kept for a later chapter open. Background steps do not call it.
+  ts::EpubBook::ProgressFn hookFn = nullptr;
+  void* hookCtx = nullptr;
 
   bool loadFont(const char* fontPath);
   enum class IndexStep { Ok, NeedAtoms, Done, Error };

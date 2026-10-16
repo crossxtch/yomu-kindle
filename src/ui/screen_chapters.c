@@ -64,11 +64,10 @@ void paint_chapters(State *st) {
 }
 
 static void show_opening(State *st) {
-  AppHost *host = st->host;
-  Layout layout = layout_of(host->w, host->h);
-  draw_clear(host->gray, host->w, host->h, host->w, 255);
-  draw_text(host->gray, host->w, host->h, host->w, layout.pad, layout.pad, layout.scale, "開いています…", 0);
-  host->present(host, 0, 0, 0, 0, 1);
+  st->index_shown = 0;
+  st->index_done = -1;
+  st->index_total = -1;
+  paint_opening(st, 0, 0);
 }
 
 static int go_chapter(State *st, int index) {

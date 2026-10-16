@@ -31,7 +31,7 @@ static void present(AppHost *host, int x, int y, int w, int h, int full) {
 
 static int poll_event(AppHost *host, AppEvent *event) {
   Plat *plat = host->user;
-  return kindle_input_poll(plat->input, event);
+  return kindle_input_poll(plat->input, event, host->poll_ms);
 }
 
 static void sleep_device(AppHost *host) {

@@ -193,10 +193,44 @@ int app_run(AppHost *host, const char *initial_path) {
     }
     AppEvent ev;
     memset(&ev, 0, sizeof ev);
+    host->poll_ms = (st->ts && !st->index_stall && !ts_done(st->ts)) ? 0 : -1;
     int polled = host->poll(host, &ev);
     if (polled < 0 || ev.kind == EV_QUIT) {
       break;
     }
+    if (polled == 0 || ev.kind == EV_NONE) {
+      if (st->ts && !st->index_stall && !ts_done(st->ts)) {
+        int done = 0;
+        int total = 0;
+        int done2 = 0;
+        int total2 = 0;
+        int more;
+        ts_spine(st->ts, &done, &total);
+        more = ts_index_step(st->ts);
+        ts_spine(st->ts, &done2, &total2);
+        if (!more) {
+          if (ts_done(st->ts)) {
+            yomu_log("index finished");
+          } else {
+            st->index_stall = 1;
+          }
+          if (st->screen == SCR_READ && st->index_badge) {
+            if (!present_spine_badge(st)) {
+              need_paint = 1;
+            }
+          }
+        } else if (st->screen == SCR_READ && (done2 != done || total2 != total)) {
+          int show = total2 > 0 && done2 < total2 && !ts_done(st->ts);
+          if (show || st->index_badge) {
+            if (!present_spine_badge(st)) {
+              need_paint = 1;
+            }
+          }
+        }
+      }
+      continue;
+    }
+    st->index_stall = 0;
     if (ev.kind == EV_SLEEP) {
       yomu_log("sleep event callback %d", host->sleep ? 1 : 0);
       if (host->sleep) {
@@ -205,9 +239,6 @@ int app_run(AppHost *host, const char *initial_path) {
       }
       st->since_full = 0;
       need_paint = 1;
-      continue;
-    }
-    if (polled == 0 || ev.kind == EV_NONE) {
       continue;
     }
     int dirty = 0;

@@ -9,8 +9,9 @@ typedef struct KindleInput KindleInput;
 int kindle_input_open(KindleInput **out, int width, int height, int rot);
 void kindle_input_close(KindleInput *input);
 
-/* Blocks until an event. Returns 1, or -1 when the process was asked to stop. */
-int kindle_input_poll(KindleInput *input, AppEvent *event);
+/* Wait up to timeout_ms for an event. -1 blocks. 0 returns at once.
+ * Returns 1 on an event, 0 on timeout, or -1 when the process was asked to stop. */
+int kindle_input_poll(KindleInput *input, AppEvent *event, int timeout_ms);
 
 /* Wait up to timeout_ms. Returns 1 if a power press arrived, 0 on timeout,
  * or -1 when the process was asked to stop. Other events are dropped. */

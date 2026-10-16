@@ -67,6 +67,15 @@ typedef struct State {
   int cur_page;
   int ahead_page;
   uint16_t cur_w, cur_h, ahead_w, ahead_h;
+  /* Opening-screen progress. index_shown is 1 after 開いています… is up.
+   * index_done and index_total are the last spine pair painted, or -1.
+   * index_stall stops a step that made no progress from spinning.
+   * index_badge is 1 when the reader frame is carrying the spine line. */
+  int index_shown;
+  int index_done;
+  int index_total;
+  int index_stall;
+  int index_badge;
 } State;
 
 Layout layout_of(int width, int height);
@@ -103,6 +112,12 @@ int reading_open_chapter(State *st, int index, int *page);
 void reading_drop_pages(State *st);
 void prefetch_next_page(State *st);
 void paint_reader(State *st, int *full, int *rx, int *ry, int *rw, int *rh);
+/* Status while the saved page is still being reached. done/total are spine items.
+ * The first call fills the screen. Later calls with a new count redraw the line. */
+void paint_opening(State *st, int done, int total);
+/* Draw or clear the spine line on the current reader frame and partial-refresh it.
+ * 0 means the page cache cannot restore the line, so the caller paints the page. */
+int present_spine_badge(State *st);
 void blit_page(State *st);
 int handle_reader(State *st, const AppEvent *ev);
 

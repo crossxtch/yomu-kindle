@@ -46,6 +46,9 @@ typedef struct AppHost {
   int (*poll)(struct AppHost *host, AppEvent *event);
   /* Optional. A power press asks the device to sleep. NULL keeps running. */
   void (*sleep)(struct AppHost *host);
+  /* How long poll waits. -1 blocks. 0 returns when nothing is waiting.
+   * The app sets this before each poll. */
+  int poll_ms;
 } AppHost;
 
 /* initial_path may be NULL. Opens that book after the library scan when set. */

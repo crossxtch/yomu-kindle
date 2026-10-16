@@ -534,7 +534,7 @@ int kindle_input_take_power(KindleInput *input, int timeout_ms) {
   return saw ? 1 : 0;
 }
 
-int kindle_input_poll(KindleInput *input, AppEvent *event) {
+int kindle_input_poll(KindleInput *input, AppEvent *event, int timeout_ms) {
   if (!input || !event) {
     return -1;
   }
@@ -551,7 +551,12 @@ int kindle_input_poll(KindleInput *input, AppEvent *event) {
     if (np == 0) {
       return -1;
     }
-    int pr = poll(pfds, (nfds_t)np, -1);
+    int pr = poll(pfds, (nfds_t)np, timeout_ms < 0 ? -1 : timeout_ms);
+    if (pr == 0) {
+      memset(event, 0, sizeof *event);
+      event->kind = EV_NONE;
+      return 0;
+    }
     if (pr < 0) {
       if (errno == EINTR) {
         if (g_stop) {

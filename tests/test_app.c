@@ -957,6 +957,122 @@ static int write_three_chapter_epub(const char *path) {
   return write_stored_parts(path, ents, 6);
 }
 
+struct IndexProg {
+  int calls;
+  int saw_total;
+  int last_done;
+  int last_total;
+};
+
+static void index_progress(void *ctx, int done, int total) {
+  struct IndexProg *prog = ctx;
+  prog->calls++;
+  prog->last_done = done;
+  prog->last_total = total;
+  if (total == 3 && done >= 1) {
+    prog->saw_total = 1;
+  }
+}
+
+static void test_index_continues(void) {
+  char dir[] = "/tmp/yomu-idx-XXXXXX";
+  char book_path[256];
+  struct IndexProg prog;
+  TsBook *book;
+  uint8_t *page;
+  int done = 0;
+  int total = 0;
+  int steps = 0;
+  const int w = 120;
+  const int h = 80;
+  memset(&prog, 0, sizeof prog);
+  expect(mkdtemp(dir) != NULL, "index dir");
+  snprintf(book_path, sizeof book_path, "%s/Three.epub", dir);
+  expect(write_three_chapter_epub(book_path) == 0, "index epub");
+  book = ts_open_progress(book_path, dir, NULL, w, h, index_progress, &prog);
+  expect(book != NULL, ts_error(NULL));
+  if (!book) {
+    remove(book_path);
+    rmdir(dir);
+    return;
+  }
+  expect(prog.calls > 0 && prog.saw_total, "open reports spine progress");
+  expect(ts_done(book) == 0, "open returns before the spine is finished");
+  expect(ts_spine(book, &done, &total) == 1, "spine count");
+  expect(total == 3 && done < total, "saved page is ready before the last spine");
+  while (!ts_done(book) && steps < 40) {
+    int more = ts_index_step(book);
+    steps++;
+    if (!more && !ts_done(book)) {
+      break;
+    }
+  }
+  expect(ts_done(book) == 1, "background steps finish the book");
+  done = 0;
+  total = 0;
+  expect(ts_spine(book, &done, &total) == 1 && done == 3 && total == 3, "every spine item is ingested");
+  expect(ts_index_step(book) == 0, "a finished book has no further step");
+  page = malloc((size_t)w * (size_t)h);
+  expect(page != NULL, "index page");
+  if (page) {
+    memset(page, 255, (size_t)w * (size_t)h);
+    expect(ts_render(book, 0, page, w, h) == 1, "page 0 renders after indexing");
+    expect(ink_count(page, w * h) > 8, "indexed page has ink");
+    free(page);
+  }
+  ts_close(book);
+  remove(book_path);
+  rmdir(dir);
+}
+
+static int g_idle_step;
+
+static int idle_poll(AppHost *host, AppEvent *event) {
+  (void)host;
+  memset(event, 0, sizeof *event);
+  if (g_idle_step++ < 40) {
+    event->kind = EV_NONE;
+    return 0;
+  }
+  event->kind = EV_QUIT;
+  return -1;
+}
+
+static void test_index_idle(void) {
+  char dir[] = "/tmp/yomu-idle-XXXXXX";
+  char book_path[256];
+  uint8_t *gray;
+  AppHost host;
+  const int w = 120;
+  const int h = 80;
+  expect(mkdtemp(dir) != NULL, "idle dir");
+  snprintf(book_path, sizeof book_path, "%s/Three.epub", dir);
+  expect(write_three_chapter_epub(book_path) == 0, "idle epub");
+  gray = malloc((size_t)w * (size_t)h);
+  expect(gray != NULL, "idle gray");
+  if (!gray) {
+    remove(book_path);
+    rmdir(dir);
+    return;
+  }
+  memset(gray, 255, (size_t)w * (size_t)h);
+  memset(&host, 0, sizeof host);
+  host.w = w;
+  host.h = h;
+  host.gray = gray;
+  host.full_every = 8;
+  host.root = dir;
+  host.home = dir;
+  host.present = fake_present;
+  host.poll = idle_poll;
+  g_idle_step = 0;
+  expect(app_run(&host, book_path) == 0, "idle indexing returns");
+  expect(g_idle_step > 1, "idle poll ran");
+  free(gray);
+  remove(book_path);
+  rmdir(dir);
+}
+
 static void test_chapter_ranges(void) {
   char dir[] = "/tmp/yomu-chap-XXXXXX";
   char book_path[256];
@@ -1327,6 +1443,8 @@ int main(void) {
   test_sleep_stays();
   test_tap_buttons();
   test_chapter_ranges();
+  test_index_continues();
+  test_index_idle();
   test_jump_page();
   test_type();
   test_fileserver();

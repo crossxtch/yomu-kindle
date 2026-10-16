@@ -148,6 +148,8 @@ bool TypesetBook::loadFont(const char* fontPath) {
 bool TypesetBook::open(const char* path, ts::EpubBook::ProgressFn progress, void* progressCtx, const char* fontPath,
                       const uint32_t resumePage, const uint32_t resumeAtom) {
   close();
+  hookFn = progress;
+  hookCtx = progressCtx;
   if (!path || path[0] == '\0') {
     error = "no path";
     return false;
@@ -373,6 +375,8 @@ void TypesetBook::close() {
   extendFailed = false;
   partialOpen = false;
   cursorOk = false;
+  hookFn = nullptr;
+  hookCtx = nullptr;
   indexBase = kIndexPayload;
   nextSpine = 0;
   spineCount = 0;
