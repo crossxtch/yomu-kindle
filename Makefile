@@ -37,7 +37,22 @@ OBJS := \
 	build/host/ft/base/ftmm.o \
 	build/host/ft/sfnt/sfnt.o \
 	build/host/ft/truetype/truetype.o \
-	build/host/ft/smooth/smooth.o
+	build/host/ft/smooth/smooth.o \
+	build/host/typeset/AtomFile.o \
+	build/host/typeset/Epub.o \
+	build/host/typeset/FtFont.o \
+	build/host/typeset/HalPosix.o \
+	build/host/typeset/HtmlIR.o \
+	build/host/typeset/HtmlSax.o \
+	build/host/typeset/Kinsoku.o \
+	build/host/typeset/Layout.o \
+	build/host/typeset/PicturePage.o \
+	build/host/typeset/TextIr.o \
+	build/host/typeset/TypesetBook.o \
+	build/host/typeset/TypesetBookBuild.o \
+	build/host/typeset/TypesetBookGray.o \
+	build/host/typeset/Utf8.o \
+	build/host/typeset/Zip.o
 
 .PHONY: all clean
 
