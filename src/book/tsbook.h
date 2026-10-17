@@ -1,7 +1,7 @@
 #ifndef YOMU_TSBOOK_H
 #define YOMU_TSBOOK_H
 
-/* Japanese EPUB and plain text. Layout is the crossjp typesetter. Glyphs are
+/* Japanese EPUB and plain text. Layout is the shared typesetter. Glyphs are
  * FreeType gray, 255 white and 0 black, in the caller's row-major buffer. */
 
 #include <stddef.h>

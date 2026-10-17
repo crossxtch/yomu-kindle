@@ -41,8 +41,8 @@ void map_path(char *dst, size_t dst_n, const char *path) {
     }
     return;
   }
-  if (strncmp(path, "/.crossjp", 9) == 0) {
-    snprintf(dst, dst_n, "%s%s", g_root, path + 9);
+  if (strncmp(path, "/.yomu", 6) == 0) {
+    snprintf(dst, dst_n, "%s%s", g_root, path + 6);
     return;
   }
   snprintf(dst, dst_n, "%s", path);

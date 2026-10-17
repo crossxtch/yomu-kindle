@@ -6,7 +6,7 @@ extern "C" {
 
 #include <time.h>
 
-/* crossjp logs through these macros. yomu writes them to the same log. */
+/* The shared sources log through these macros. yomu writes them to the same log. */
 
 #define LOG_ERR(tag, fmt, ...) yomu_log(tag ": " fmt, ##__VA_ARGS__)
 #define LOG_INF(tag, fmt, ...) yomu_log(tag ": " fmt, ##__VA_ARGS__)

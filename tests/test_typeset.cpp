@@ -4,7 +4,7 @@
 #include "PicturePage.h"
 #include "TextIr.h"
 
-#include "XgfFont.h"
+#include "FtFont.h"
 
 #include <HalStorage.h>
 
@@ -206,7 +206,7 @@ void testFace() {
       "/Library/Fonts/Arial Unicode.ttf",
       nullptr,
   };
-  XgfFont font;
+  FtFont font;
   const char *path = nullptr;
   for (int i = 0; paths[i]; ++i) {
     if (font.load(paths[i], -1)) {
@@ -275,8 +275,8 @@ void testCollection() {
     }
   }
   if (n >= 2) {
-    XgfFont first;
-    XgfFont last;
+    FtFont first;
+    FtFont last;
     check(first.load(path, indexes[0]), "load the first collection face");
     check(last.load(path, indexes[n - 1]), "load the last collection face");
     check(first.advancePx(0x3042, 48) > 0 && last.advancePx(0x3042, 48) > 0, "each collection face has あ");
@@ -470,7 +470,7 @@ void testPictures() {
   check(writeBytes(gifPath, kGif80x40, sizeof kGif80x40), "write gif");
 
   ts::PictureWriter writer;
-  check(writer.begin("/.crossjp/i_test.bin", 120, 80, false), "picture sidecar");
+  check(writer.begin("/.yomu/i_test.bin", 120, 80, false), "picture sidecar");
   HalFile tiny;
   HalFile fig;
   HalFile gif;
@@ -483,18 +483,18 @@ void testPictures() {
   writer.end();
 
   uint8_t page[120 * 80];
-  check(ts::picturePaint("/.crossjp/i_test.bin", 1, page, 120, 80), "paint png");
+  check(ts::picturePaint("/.yomu/i_test.bin", 1, page, 120, 80), "paint png");
   check(page[0] == 255, "letterbox top stays white");
   check(page[40 * 120 + 60] == 0, "png center is black");
-  check(ts::picturePaint("/.crossjp/i_test.bin", 2, page, 120, 80), "paint gif");
+  check(ts::picturePaint("/.yomu/i_test.bin", 2, page, 120, 80), "paint gif");
   check(page[0] == 255, "gif letterbox top stays white");
   check(page[40 * 120 + 60] == 0, "gif center is black");
 
-  check(writer.begin("/.crossjp/i_test.bin", 120, 80, true), "append sidecar");
+  check(writer.begin("/.yomu/i_test.bin", 120, 80, true), "append sidecar");
   check(writer.count() == 2, "append keeps the stored ids");
   check(writer.addPng(fig) == 3, "append stores the next id");
   writer.end();
-  check(ts::picturePaint("/.crossjp/i_test.bin", 1, page, 120, 80), "first id still paints");
+  check(ts::picturePaint("/.yomu/i_test.bin", 1, page, 120, 80), "first id still paints");
   check(page[40 * 120 + 60] == 0, "first picture stays black");
 }
 

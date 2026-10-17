@@ -189,7 +189,7 @@ compiler.
 ```
 src/ui        screens, gestures, and menu text
 src/book      library, progress, type.txt, and the typesetter bridge
-src/typeset   FreeType raster and the POSIX file layer
+src/paint     FreeType face, gray paint, and the POSIX file layer
 ../typeset    book-to-page library (EPUB and txt to glyph runs)
 src/kindle    framebuffer, touch, sleep, and main
 src/net       the transfer server and the host HTTP client
@@ -201,8 +201,8 @@ reference/koreader   notes only; it is not built or linked
 
 The book-to-page library lives in the sibling `typeset` directory. yomu
 builds those sources and draws the glyph runs with FreeType. `FtFont`,
-`HalPosix`, and `TypesetBookGray` stay in `src/typeset`. The MIT notice
-for the files that came from crossjp is `typeset/LICENSE`.
+`HalPosix`, and `TypesetBookGray` stay in `src/paint`. The MIT notice
+for the shared library is `../typeset/LICENSE`.
 
 ## Third party
 

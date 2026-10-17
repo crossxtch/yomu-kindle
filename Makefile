@@ -7,7 +7,7 @@
 # src/book     library scan, progress, type size, typesetter bridge
 # src/net      transfer server, its page, and the host HTTP client
 # src/kindle   framebuffer, touch, power, and main
-# src/typeset  FreeType raster. The shared library is ../typeset/src.
+# src/paint  FreeType raster. The shared library is ../typeset/src.
 #                The Kindle book driver is ../typeset/book.
 #
 # The HTTP client is only for the host tests. The Kindle build serves
@@ -22,7 +22,7 @@ PUFF_CFLAGS ?= -std=gnu11 -O2 -w -D_FILE_OFFSET_BITS=64
 TS_CXXFLAGS ?= -std=gnu++17 -O2 -Wall -Wextra -Wno-unused-parameter -Wno-unused-variable \
 	-Wno-sign-compare -Wno-missing-field-initializers -Wno-unused-function \
 	-Wno-unknown-warning-option -Wno-unused-but-set-variable -D_FILE_OFFSET_BITS=64 \
-	-Isrc/typeset/compat -Isrc/typeset -I$(TYPESET)/book -I$(TYPESET)/src -I$(TYPESET)/port \
+	-Isrc/paint/compat -Isrc/paint -I$(TYPESET)/book -I$(TYPESET)/src -I$(TYPESET)/port \
 	-Ithird_party -Ithird_party/freetype/include \
 	$(SRC_INCLUDES)
 FT_CFLAGS ?= -std=gnu11 -O2 -w -DFT2_BUILD_LIBRARY -D_FILE_OFFSET_BITS=64 \
@@ -79,9 +79,9 @@ TS_BOOK_CPPS := \
 	$(TYPESET)/book/TypesetBookBuild.cpp
 
 TS_CPPS := \
-	src/typeset/FtFont.cpp \
-	src/typeset/HalPosix.cpp \
-	src/typeset/TypesetBookGray.cpp \
+	src/paint/FtFont.cpp \
+	src/paint/HalPosix.cpp \
+	src/paint/TypesetBookGray.cpp \
 	src/book/tsbook.cpp
 
 FT_SRCS := \

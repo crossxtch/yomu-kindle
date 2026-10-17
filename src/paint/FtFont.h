@@ -2,15 +2,14 @@
 
 #include <cstdint>
 
-/* FreeType face. The class stays named XgfFont so the crossjp call sites
- * do not change. Drawing goes to an 8-bit page. */
+/* FreeType face. Drawing goes to an 8-bit page. */
 
-class XgfFont {
+class FtFont {
  public:
-  XgfFont() = default;
-  ~XgfFont() { close(); }
-  XgfFont(const XgfFont &) = delete;
-  XgfFont &operator=(const XgfFont &) = delete;
+  FtFont() = default;
+  ~FtFont() { close(); }
+  FtFont(const FtFont &) = delete;
+  FtFont &operator=(const FtFont &) = delete;
 
   /* faceIndex < 0 uses the first face that has あ and 一. */
   bool load(const char *path, int faceIndex);

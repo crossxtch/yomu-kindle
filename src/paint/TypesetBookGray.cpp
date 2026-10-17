@@ -22,7 +22,7 @@ uint32_t fallbackCp(const uint32_t cp) {
   return cp;
 }
 
-uint32_t pickCp(XgfFont& font, const uint32_t cp) {
+uint32_t pickCp(FtFont& font, const uint32_t cp) {
   if (font.glyphId(cp) != 0xFFFF) {
     return cp;
   }

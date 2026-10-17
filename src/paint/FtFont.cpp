@@ -1,4 +1,4 @@
-#include "XgfFont.h"
+#include "FtFont.h"
 
 #include "Kinsoku.h"
 
@@ -545,7 +545,7 @@ extern "C" int ts_font_faces(const char *path, int *indexes, char labels[][48], 
   return n;
 }
 
-bool XgfFont::load(const char *path, int faceIndex) {
+bool FtFont::load(const char *path, int faceIndex) {
   FT_Library lib = nullptr;
   int index;
   close();
@@ -607,14 +607,14 @@ bool XgfFont::load(const char *path, int faceIndex) {
   return false;
 }
 
-void XgfFont::clearVert() {
+void FtFont::clearVert() {
   freeVert(static_cast<VertSet *>(vert));
   vert = nullptr;
 }
 
-void XgfFont::loadVert() { vert = buildVert(static_cast<FT_Face>(face)); }
+void FtFont::loadVert() { vert = buildVert(static_cast<FT_Face>(face)); }
 
-uint32_t XgfFont::vertOf(uint32_t gid) const {
+uint32_t FtFont::vertOf(uint32_t gid) const {
   const VertSet *v = static_cast<const VertSet *>(vert);
   uint16_t g;
   int s;
@@ -641,7 +641,7 @@ uint32_t XgfFont::vertOf(uint32_t gid) const {
   return g;
 }
 
-void XgfFont::close() {
+void FtFont::close() {
   int i;
   for (i = 0; i < 256; i++) {
     free(slots[i].bits);
@@ -659,7 +659,7 @@ void XgfFont::close() {
   }
 }
 
-uint16_t XgfFont::glyphId(uint32_t cp) const {
+uint16_t FtFont::glyphId(uint32_t cp) const {
   FT_Face f = static_cast<FT_Face>(face);
   if (!f || FT_Get_Char_Index(f, cp) == 0) {
     return 0xFFFF;
@@ -667,7 +667,7 @@ uint16_t XgfFont::glyphId(uint32_t cp) const {
   return 1;
 }
 
-int16_t XgfFont::advancePx(uint32_t cp, int px) {
+int16_t FtFont::advancePx(uint32_t cp, int px) {
   FT_Face f = static_cast<FT_Face>(face);
   int w;
   if (!f || px < 1) {
@@ -692,7 +692,7 @@ int16_t XgfFont::advancePx(uint32_t cp, int px) {
   return (int16_t)w;
 }
 
-const XgfFont::Slot *XgfFont::slotFor(uint32_t gid, int px, bool rotate, bool bold) {
+const FtFont::Slot *FtFont::slotFor(uint32_t gid, int px, bool rotate, bool bold) {
   FT_Face f = static_cast<FT_Face>(face);
   int i;
   Slot *slot = nullptr;
@@ -803,7 +803,7 @@ const XgfFont::Slot *XgfFont::slotFor(uint32_t gid, int px, bool rotate, bool bo
   return slot;
 }
 
-bool XgfFont::drawGray(uint8_t *page, int pageW, int pageH, int x, int y, int cellW, int cellH, uint32_t cp, int px,
+bool FtFont::drawGray(uint8_t *page, int pageW, int pageH, int x, int y, int cellW, int cellH, uint32_t cp, int px,
                        bool vertical, bool bold) {
   FT_Face f = static_cast<FT_Face>(face);
   FT_UInt gid;

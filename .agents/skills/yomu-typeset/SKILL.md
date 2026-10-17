@@ -2,7 +2,7 @@
 name: yomu-typeset
 description: >
   Constraints for yomu's Japanese typesetter.
-  Use when editing the sibling typeset repo, src/typeset, atom or page-index files, face CSS, FreeType collection faces, or the host typeset tests, or when the user runs /yomu-typeset.
+  Use when editing the sibling typeset repo, src/paint, atom or page-index files, face CSS, FreeType collection faces, or the host typeset tests, or when the user runs /yomu-typeset.
 ---
 
 # Typesetter
@@ -12,7 +12,7 @@ Follow the struct, rebuild, and face-list rules in `AGENTS.md`.
 ## Cache magics
 
 Atom files are IRAB, `kAtomMagic` `0x42415249` in `../typeset/src/AtomFile.h`. A mismatch rebuilds the file. Character, group, and 縦中横 records store a 囲み罫 id after `startEm`. 0 is none. The page index does not store the id.
-yomu's `TypesetBook` is `../typeset/book/TypesetBook.h`. The X4 Classic class is `crossjp/lib/Typesetter/TypesetBook.h`.
+yomu's `TypesetBook` is `../typeset/book/TypesetBook.h`. The X4 Classic class is `../yomu-mini/lib/Book/TypesetBook.h`.
 A finished page index is TIDA, `TypesetBook::kIndexMagic` `0x41444954`. A partial index is TIDB, `kIndexPartial` `0x42444954`. An older index magic is rebuilt because the column length changed. The record size stays 7 bytes.
 `faceIndex` 0 keeps the path-only page-index hash. A positive index mixes `face ^= (uint32_t)faceIndex * 0x9E3779B9u`.
 
@@ -38,7 +38,7 @@ The contents list prefers the EPUB nav document, then the NCX. The fragment afte
 ## Collections
 
 In `third_party/freetype/include/freetype/config/ftmodule.h`, register `psnames`, `psaux`, `pshinter`, and `cff` before the TrueType driver. List those sources before `sfnt` in the Makefile.
-`XgfFont::load(path, faceIndex)` has no default argument. `faceIndex < 0` keeps the first face that contains あ (U+3042) and 一 (U+4E00). One collection face is one row in 文字.
+`FtFont::load(path, faceIndex)` has no default argument. `faceIndex < 0` keeps the first face that contains あ (U+3042) and 一 (U+4E00). One collection face is one row in 文字.
 
 ## Host checks
 
