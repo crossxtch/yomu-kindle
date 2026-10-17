@@ -2,6 +2,7 @@
 #include "Kinsoku.h"
 #include "Layout.h"
 #include "PicturePage.h"
+#include "TextIr.h"
 
 #include "XgfFont.h"
 
@@ -497,6 +498,155 @@ void testPictures() {
   check(page[40 * 120 + 60] == 0, "first picture stays black");
 }
 
+void testBoxPad() {
+  ts::PageLayouter lay;
+  ts::LayoutOptions opt;
+  opt.width = 80;
+  opt.height = 200;
+  opt.em = 20;
+  opt.margin = 0;
+  opt.mode = ts::WritingMode::VerticalRl;
+  lay.begin(opt);
+  ts::Atom a{};
+  a.cp = 0x3042;
+  a.box = 1;
+  lay.feed(a, 0);
+  a.cp = 0x3044;
+  a.box = 1;
+  lay.feed(a, 1);
+  a.cp = 0x3046;
+  a.box = 0;
+  a.emphasis = ts::kEmDot;
+  lay.feed(a, 2);
+  check(lay.finish(), "box page commits");
+  check(lay.pageGlyphCount() == 3, "three boxed glyphs");
+  if (lay.pageGlyphCount() == 3) {
+    const ts::GlyphRun *p = lay.page();
+    check(p[0].box == 1 && p[1].box == 1 && p[2].box == 0, "box ids stay on the runs");
+    check(p[1].y == p[0].y + 20, "a continued box does not pad");
+    check(p[2].y >= p[1].y + 24, "leaving a box pads about 0.22em");
+    check(p[2].emphasis == ts::kEmDot, "a dot mark reaches the run");
+  }
+}
+
+struct AtomBag {
+  ts::Atom atoms[64]{};
+  int n = 0;
+  char ids[4][40]{};
+  int nId = 0;
+};
+
+bool takeAtom(void *ctx, const ts::Atom &atom, uint32_t) {
+  auto *bag = static_cast<AtomBag *>(ctx);
+  if (bag->n < 64) {
+    bag->atoms[bag->n++] = atom;
+  }
+  return true;
+}
+
+void takeAnchor(void *ctx, const char *id) {
+  auto *bag = static_cast<AtomBag *>(ctx);
+  if (!id || bag->nId >= 4) {
+    return;
+  }
+  std::snprintf(bag->ids[bag->nId], sizeof(bag->ids[0]), "%s", id);
+  bag->nId++;
+}
+
+const ts::Atom *findCp(const AtomBag &bag, uint32_t cp) {
+  for (int i = 0; i < bag.n; ++i) {
+    if (bag.atoms[i].kind == ts::AtomKind::Ch && bag.atoms[i].cp == cp) {
+      return &bag.atoms[i];
+    }
+  }
+  return nullptr;
+}
+
+bool headingAround(const AtomBag &bag, uint32_t cp) {
+  for (int i = 0; i < bag.n; ++i) {
+    if (bag.atoms[i].kind != ts::AtomKind::ColumnBreak || bag.atoms[i].cp != 1) {
+      continue;
+    }
+    for (int j = i + 1; j < bag.n; ++j) {
+      if (bag.atoms[j].kind == ts::AtomKind::ColumnBreak) {
+        break;
+      }
+      if (bag.atoms[j].kind == ts::AtomKind::Ch && bag.atoms[j].cp == cp) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+void testAozora() {
+  const char *text =
+      "\uFF3B\uFF03\u5927\u898B\u51FA\u3057\uFF3D\u6625\uFF3B\uFF03\u5927\u898B\u51FA\u3057\u7D42\u308F\u308A\uFF3D\n"
+      "\u672C\u6587\n"
+      "\u6F22\u5B57\uFF3B\uFF03\uFF08\u30EC\uFF09\uFF3D\n"
+      "\u984C\uFF3B\uFF03\u300C\u984C\u300D\u306F\u5927\u898B\u51FA\u3057\uFF3D\n"
+      "\u70B9\uFF3B\uFF03\u300C\u70B9\u300D\u306B\u508D\u70B9\uFF3D\n"
+      "\u7DDA\uFF3B\uFF03\u300C\u7DDA\u300D\u306B\u508D\u7DDA\uFF3D\n"
+      "\u767D\uFF3B\uFF03\u300C\u767D\u300D\u306B\u767D\u30B4\u30DE\uFF3D\n";
+  const char *path = "/tmp/yomu-aozora.txt";
+  check(writeBytes(path, reinterpret_cast<const unsigned char *>(text), std::strlen(text)), "write aozora");
+  HalFile in;
+  check(Storage.openFileForRead("TS", path, in), "open aozora");
+  ts::Utf8AtomReader reader;
+  reader.bind(&in);
+  AtomBag bag;
+  ts::Atom atom{};
+  uint32_t pos = 0;
+  while (bag.n < 64 && reader.next(atom, pos)) {
+    bag.atoms[bag.n++] = atom;
+  }
+  std::remove(path);
+  check(headingAround(bag, 0x6625), "range heading wraps 春");
+  check(headingAround(bag, 0x984C), "reference heading wraps 題");
+  check(findCp(bag, 0x672C) != nullptr && findCp(bag, 0x6587) != nullptr, "body text survives");
+  check(findCp(bag, 0x30EC) != nullptr, "kunten emits the inner kana");
+  const ts::Atom *dot = findCp(bag, 0x70B9);
+  const ts::Atom *line = findCp(bag, 0x7DDA);
+  const ts::Atom *open = findCp(bag, 0x767D);
+  check(dot && dot->emphasis == ts::kEmSesame, "傍点 is sesame");
+  check(line && line->emphasis == ts::kEmLine, "傍線 is a side line");
+  check(open && open->emphasis == ts::kEmSesameOpen, "白ゴマ is an open sesame");
+}
+
+void testMarks() {
+  const char *html =
+      "<html><head><style>"
+      "span.board{border:1px solid black}"
+      "span.side{border-bottom:1px dotted #531084}"
+      "span.mark{text-emphasis-style:open sesame}"
+      "em{text-emphasis:none}"
+      "</style></head><body>"
+      "<p id=\"here\"><span class=\"board\">囲文</span>外<em>強</em>"
+      "<span class=\"mark\">点</span><span class=\"side\">下</span></p>"
+      "<a name=\"sec\">い</a>"
+      "</body></html>";
+  AtomBag bag;
+  ts::FaceRule rules[8]{};
+  uint8_t nRules = 0;
+  ts::scanStyleTags(html, std::strlen(html), rules, nRules);
+  ts::AtomSink sink{&bag, takeAtom, nullptr, rules, nRules, takeAnchor};
+  check(ts::htmlToAtoms(html, std::strlen(html), sink), "marks html");
+  const ts::Atom *box = findCp(bag, 0x56F2);
+  const ts::Atom *box2 = findCp(bag, 0x6587);
+  const ts::Atom *plain = findCp(bag, 0x5916);
+  const ts::Atom *em = findCp(bag, 0x5F37);
+  const ts::Atom *mark = findCp(bag, 0x70B9);
+  const ts::Atom *side = findCp(bag, 0x4E0B);
+  check(box && box2 && box->box != 0 && box->box == box2->box, "one border shares a box id");
+  check(plain && plain->box == 0, "text outside the border is unboxed");
+  check(em && (em->emphasis & ts::kEmphasisMask) == ts::kEmSesame, "bare em stays sesame");
+  check(mark && (mark->emphasis & ts::kEmphasisMask) == ts::kEmSesameOpen, "css open sesame");
+  check(side && side->box == 0 && (side->emphasis & ts::kEmphasisMask) == ts::kEmLine,
+        "one-sided border is a side line");
+  check(bag.nId == 2 && std::strcmp(bag.ids[0], "here") == 0 && std::strcmp(bag.ids[1], "sec") == 0,
+        "id and a name become anchors");
+}
+
 }  // namespace
 
 extern "C" int test_typeset_rules(void) {
@@ -508,5 +658,8 @@ extern "C" int test_typeset_rules(void) {
   testCollection();
   testColumnPicture();
   testPictures();
+  testBoxPad();
+  testAozora();
+  testMarks();
   return g_fails;
 }
