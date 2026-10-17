@@ -1,4 +1,4 @@
-yomu reads .epub and .txt books on a jailbroken Kindle (Paperwhite 2 and newer).
+yomu reads .epub, .txt, and DRM-free .mobi and .azw3 books on a jailbroken Kindle (Paperwhite 2 and newer).
 
 Needs the jailbreak hotfix that exposes /dev/fb0, plus KUAL (firmware
 before 5.16.3) or KUALA (5.16.3 and later).
@@ -10,7 +10,7 @@ Copy onto the Kindle USB drive:
 
 Eject, open KUAL or KUALA, and choose yomu. The yomu item pauses the
 Kindle UI. yomu no framework stops it and starts it again on
-exit. Put .epub and .txt files in yomu/books on the USB drive. yomu
+exit. Put .epub, .txt, .mobi, and .azw3 files in yomu/books on the USB drive. .azw is the same container. Encrypted, fixed-layout, and KFX files stay unopened. yomu
 creates that folder if it is missing. yomu starts in landscape, turned 90
 degrees (1648x1236 on a Paperwhite 11), and typesets each page to that panel.
 That orientation is fixed.

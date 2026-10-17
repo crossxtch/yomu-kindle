@@ -16,4 +16,10 @@ void kindle_power_sleep(KindleInput *input);
 void kindle_frontlight_hold_off(void);
 void kindle_frontlight_release(void);
 
+/* Wake turns the light back on. Wait briefly, then force it off again. */
+void kindle_power_after_wake(void);
+
+/* 1 when com.lab126.powerd state reads as active. */
+int kindle_power_panel_active(void);
+
 #endif

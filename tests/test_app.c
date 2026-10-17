@@ -4,9 +4,11 @@
 #include "font.h"
 #include "progress.h"
 #include "rotate.h"
+#include "screen.h"
 #include "tsbook.h"
 #include "typeface.h"
 
+#include <dirent.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -446,6 +448,96 @@ static void test_sleep_stays(void) {
   expect(app_run(&host, NULL) == 0, "missing sleep callback stays up");
   expect(g_sleep_step == 2, "null sleep still continues");
   free(gray);
+  rmdir(dir);
+}
+
+static int g_wake_step;
+static int g_last_full;
+
+static void wake_present(AppHost *host, int x, int y, int w, int h, int full) {
+  (void)host;
+  (void)x;
+  (void)y;
+  (void)w;
+  (void)h;
+  g_presents++;
+  g_last_full = full;
+}
+
+static int wake_poll(AppHost *host, AppEvent *event) {
+  memset(event, 0, sizeof *event);
+  if (host->poll_ms == 0) {
+    return 0;
+  }
+  switch (g_wake_step++) {
+    case 0:
+      g_last_full = -1;
+      event->kind = EV_WAKE;
+      return 1;
+    case 1:
+      expect(g_last_full == 1, "wake redraws the page with a full refresh");
+      event->kind = EV_QUIT;
+      return -1;
+    default:
+      event->kind = EV_QUIT;
+      return -1;
+  }
+}
+
+static void test_wake_repaints(void) {
+  char dir[] = "/tmp/yomu-wake-XXXXXX";
+  char book_path[256];
+  uint8_t *gray;
+  AppHost host;
+  const int width = 120;
+  const int height = 80;
+  expect(mkdtemp(dir) != NULL, "wake dir");
+  snprintf(book_path, sizeof book_path, "%s/Demo.txt", dir);
+  expect(write_text(book_path, k_line) == 0, "wake book");
+  gray = malloc((size_t)width * (size_t)height);
+  expect(gray != NULL, "wake gray");
+  if (!gray) {
+    return;
+  }
+  memset(gray, 255, (size_t)width * (size_t)height);
+  memset(&host, 0, sizeof host);
+  host.w = width;
+  host.h = height;
+  host.gray = gray;
+  host.full_every = 8;
+  host.root = dir;
+  host.home = dir;
+  host.present = wake_present;
+  host.poll = wake_poll;
+  host.sleep = fake_sleep;
+  g_sleeps = 0;
+  g_presents = 0;
+  g_last_full = 0;
+  g_wake_step = 0;
+  expect(app_run(&host, book_path) == 0, "wake does not exit");
+  expect(g_sleeps == 0, "wake does not ask the device to sleep");
+  expect(g_wake_step == 2, "wake returned to the loop");
+  free(gray);
+  remove(book_path);
+  snprintf(book_path, sizeof book_path, "%s/progress.tsv", dir);
+  remove(book_path);
+  snprintf(book_path, sizeof book_path, "%s/ts", dir);
+  {
+    DIR *ts = opendir(book_path);
+    if (ts) {
+      struct dirent *ent;
+      while ((ent = readdir(ts)) != NULL) {
+        char path[512];
+        if (ent->d_name[0] == '.') {
+          continue;
+        }
+        snprintf(path, sizeof path, "%s/ts/%s", dir, ent->d_name);
+        remove(path);
+      }
+      closedir(ts);
+    }
+  }
+  rmdir(book_path);
   rmdir(dir);
 }
 
@@ -2272,17 +2364,570 @@ static void test_current_chapter(void) {
   rmdir(dir);
 }
 
+static void be16p(uint8_t *p, uint16_t v) {
+  p[0] = (uint8_t)(v >> 8);
+  p[1] = (uint8_t)v;
+}
+
+static void be32p(uint8_t *p, uint32_t v) {
+  p[0] = (uint8_t)(v >> 24);
+  p[1] = (uint8_t)(v >> 16);
+  p[2] = (uint8_t)(v >> 8);
+  p[3] = (uint8_t)v;
+}
+
+static void put_vwi(uint8_t *dst, size_t *n, size_t cap, uint32_t v) {
+  uint8_t tmp[5];
+  int k = 0;
+  tmp[k++] = (uint8_t)(v & 0x7f);
+  v >>= 7;
+  while (v && k < 5) {
+    memmove(tmp + 1, tmp, (size_t)k);
+    tmp[0] = (uint8_t)(v & 0x7f);
+    k++;
+    v >>= 7;
+  }
+  tmp[k - 1] |= 0x80;
+  if (*n + (size_t)k > cap) {
+    return;
+  }
+  memcpy(dst + *n, tmp, (size_t)k);
+  *n += (size_t)k;
+}
+
+/* Bytes 0x01..0x08 and 0x80..0xFF go out as length-prefixed literals. */
+static size_t palmdoc_store(const uint8_t *in, size_t n, uint8_t *out, size_t cap) {
+  size_t i = 0;
+  size_t o = 0;
+  while (i < n) {
+    uint8_t c = in[i];
+    if (c == 0 || (c >= 0x09 && c <= 0x7f)) {
+      if (o >= cap) {
+        return 0;
+      }
+      out[o++] = c;
+      i++;
+      continue;
+    }
+    size_t run = 0;
+    while (i + run < n && run < 8) {
+      uint8_t d = in[i + run];
+      if (d == 0 || (d >= 0x09 && d <= 0x7f)) {
+        break;
+      }
+      run++;
+    }
+    if (run == 0 || o + 1 + run > cap) {
+      return 0;
+    }
+    out[o++] = (uint8_t)run;
+    memcpy(out + o, in + i, run);
+    o += run;
+    i += run;
+  }
+  return o;
+}
+
+static size_t append_exth(uint8_t *dst, size_t cap, const char *title, int fixed) {
+  size_t title_n = title ? strlen(title) : 0;
+  size_t need = 12;
+  size_t p = 12;
+  int nrec = 0;
+  if (title_n) {
+    need += 8 + title_n;
+    nrec++;
+  }
+  if (fixed) {
+    need += 12;
+    nrec++;
+  }
+  if (nrec == 0 || need > cap) {
+    return 0;
+  }
+  memcpy(dst, "EXTH", 4);
+  be32p(dst + 4, (uint32_t)need);
+  be32p(dst + 8, (uint32_t)nrec);
+  if (title_n) {
+    be32p(dst + p, 99);
+    be32p(dst + p + 4, (uint32_t)(8 + title_n));
+    memcpy(dst + p + 8, title, title_n);
+    p += 8 + title_n;
+  }
+  if (fixed) {
+    be32p(dst + p, 122);
+    be32p(dst + p + 4, 12);
+    memcpy(dst + p + 8, "true", 4);
+    p += 12;
+  }
+  return p;
+}
+
+static int write_palm(const char *path, uint8_t **recs, size_t *lens, int n) {
+  FILE *fp;
+  uint8_t hdr[78];
+  uint32_t data;
+  int i;
+  fp = fopen(path, "wb");
+  if (!fp || n < 1 || n > 16) {
+    if (fp) {
+      fclose(fp);
+    }
+    return -1;
+  }
+  memset(hdr, 0, sizeof hdr);
+  memcpy(hdr, "book", 4);
+  memcpy(hdr + 60, "BOOK", 4);
+  memcpy(hdr + 64, "MOBI", 4);
+  be16p(hdr + 76, (uint16_t)n);
+  if (fwrite(hdr, 1, 78, fp) != 78) {
+    fclose(fp);
+    return -1;
+  }
+  data = 78u + (uint32_t)n * 8u;
+  for (i = 0; i < n; i++) {
+    uint8_t ent[8];
+    memset(ent, 0, sizeof ent);
+    be32p(ent, data);
+    if (fwrite(ent, 1, 8, fp) != 8) {
+      fclose(fp);
+      return -1;
+    }
+    data += (uint32_t)lens[i];
+  }
+  for (i = 0; i < n; i++) {
+    if (lens[i] && fwrite(recs[i], 1, lens[i], fp) != lens[i]) {
+      fclose(fp);
+      return -1;
+    }
+  }
+  fclose(fp);
+  return 0;
+}
+
+/* Classic MOBI: uncompressed or PalmDOC, optional one-byte trailing extra. */
+static int write_classic_mobi(const char *path, const char *html, const char *title, int compression,
+                              int encryption, int trail, int fixed, int encoding) {
+  uint8_t comp[4096];
+  uint8_t exth[128];
+  uint8_t *recs[2];
+  size_t lens[2];
+  size_t html_n;
+  size_t comp_n;
+  size_t exth_n;
+  size_t title_n;
+  size_t total;
+  uint8_t *rec;
+  uint8_t *text;
+  int rc;
+  const uint32_t head_len = 0xE8;
+  html_n = strlen(html);
+  if (html_n == 0 || html_n > 2000) {
+    return -1;
+  }
+  if (compression == 2) {
+    comp_n = palmdoc_store((const uint8_t *)html, html_n, comp, sizeof comp);
+    if (comp_n == 0) {
+      return -1;
+    }
+  } else {
+    memcpy(comp, html, html_n);
+    comp_n = html_n;
+  }
+  text = malloc(comp_n + 1);
+  if (!text) {
+    return -1;
+  }
+  memcpy(text, comp, comp_n);
+  if (trail) {
+    text[comp_n] = 0x81;
+  }
+  title_n = title ? strlen(title) : 0;
+  exth_n = append_exth(exth, sizeof exth, title, fixed);
+  total = 16u + head_len + exth_n + title_n;
+  rec = calloc(1, total);
+  if (!rec) {
+    free(text);
+    return -1;
+  }
+  be16p(rec + 0, (uint16_t)compression);
+  be32p(rec + 4, (uint32_t)html_n);
+  be16p(rec + 8, 1);
+  be16p(rec + 10, 4096);
+  be16p(rec + 12, (uint16_t)encryption);
+  memcpy(rec + 16, "MOBI", 4);
+  be32p(rec + 20, head_len);
+  be32p(rec + 24, 2);
+  be32p(rec + 28, (uint32_t)encoding);
+  be32p(rec + 36, 6);
+  if (title_n) {
+    be32p(rec + 0x54, (uint32_t)(16u + head_len + exth_n));
+    be32p(rec + 0x58, (uint32_t)title_n);
+    memcpy(rec + 16 + head_len + exth_n, title, title_n);
+  }
+  be32p(rec + 0x6C, 0xFFFFFFFFu);
+  if (exth_n) {
+    be32p(rec + 0x80, 0x40);
+    memcpy(rec + 16 + head_len, exth, exth_n);
+  }
+  be16p(rec + 0xC0, 1);
+  if (trail) {
+    be16p(rec + 0xF2, 2);
+  }
+  recs[0] = rec;
+  lens[0] = total;
+  recs[1] = text;
+  lens[1] = comp_n + (trail ? 1 : 0);
+  rc = write_palm(path, recs, lens, 2);
+  free(rec);
+  free(text);
+  return rc;
+}
+
+struct IdxEntW {
+  const char *label;
+  int has1;
+  uint32_t t1;
+  int has6;
+  uint32_t t6a;
+  uint32_t t6b;
+};
+
+static int build_indx_main(uint8_t **out, size_t *out_n) {
+  uint8_t *rec = calloc(1, 192 + 20);
+  uint8_t *tag;
+  if (!rec) {
+    return -1;
+  }
+  memcpy(rec, "INDX", 4);
+  be32p(rec + 4, 192);
+  be32p(rec + 0x18, 1);
+  tag = rec + 192;
+  memcpy(tag, "TAGX", 4);
+  be32p(tag + 4, 20);
+  be32p(tag + 8, 1);
+  tag[12] = 1;
+  tag[13] = 1;
+  tag[14] = 1;
+  tag[15] = 0;
+  tag[16] = 6;
+  tag[17] = 2;
+  tag[18] = 2;
+  tag[19] = 0;
+  *out = rec;
+  *out_n = 212;
+  return 0;
+}
+
+static int build_indx_data(const struct IdxEntW *ents, int count, uint8_t **out, size_t *out_n) {
+  uint8_t body[512];
+  uint16_t offs[4];
+  size_t bn = 0;
+  size_t idxt;
+  size_t total;
+  uint8_t *rec;
+  int i;
+  if (count < 1 || count > 4) {
+    return -1;
+  }
+  for (i = 0; i < count; i++) {
+    size_t lab = strlen(ents[i].label);
+    size_t start = bn;
+    if (lab > 40 || bn + lab + 24 > sizeof body) {
+      return -1;
+    }
+    body[bn++] = (uint8_t)lab;
+    memcpy(body + bn, ents[i].label, lab);
+    bn += lab;
+    body[bn++] = (uint8_t)((ents[i].has1 ? 1 : 0) | (ents[i].has6 ? 2 : 0));
+    if (ents[i].has1) {
+      put_vwi(body, &bn, sizeof body, ents[i].t1);
+    }
+    if (ents[i].has6) {
+      put_vwi(body, &bn, sizeof body, ents[i].t6a);
+      put_vwi(body, &bn, sizeof body, ents[i].t6b);
+    }
+    offs[i] = (uint16_t)(192 + start);
+  }
+  idxt = 192 + bn;
+  total = idxt + 4 + (size_t)count * 2;
+  rec = calloc(1, total);
+  if (!rec) {
+    return -1;
+  }
+  memcpy(rec, "INDX", 4);
+  be32p(rec + 4, 192);
+  be32p(rec + 0x14, (uint32_t)idxt);
+  be32p(rec + 0x18, (uint32_t)count);
+  memcpy(rec + 192, body, bn);
+  memcpy(rec + idxt, "IDXT", 4);
+  for (i = 0; i < count; i++) {
+    be16p(rec + idxt + 4 + (size_t)i * 2, offs[i]);
+  }
+  *out = rec;
+  *out_n = total;
+  return 0;
+}
+
+/* KF8 with two parts. The first heading is a fragment inserted into an empty h1. */
+static int write_kf8(const char *path) {
+  char skel0[640];
+  char skel1[640];
+  char insert_label[16];
+  uint8_t *raw;
+  size_t skel0_n;
+  size_t skel1_n;
+  size_t raw_n;
+  uint32_t insert_at;
+  uint8_t *recs[7];
+  size_t lens[7];
+  uint8_t *head;
+  uint8_t exth[64];
+  size_t exth_n;
+  const uint32_t head_len = 0xF0;
+  struct IdxEntW skel_ents[2];
+  struct IdxEntW frag_ent;
+  int rc = -1;
+  int i;
+  const char *frag = "猫";
+  snprintf(skel0, sizeof skel0,
+           "<html><body><style>body{writing-mode:vertical-rl}</style><h1></h1><p>%s</p></body></html>", k_line);
+  snprintf(skel1, sizeof skel1, "<html><body><h1>犬</h1><p>%s</p></body></html>", k_line);
+  skel0_n = strlen(skel0);
+  skel1_n = strlen(skel1);
+  if (!strstr(skel0, "</h1>")) {
+    return -1;
+  }
+  insert_at = (uint32_t)(strstr(skel0, "</h1>") - skel0);
+  snprintf(insert_label, sizeof insert_label, "%u", insert_at);
+  raw_n = skel0_n + 3 + skel1_n;
+  raw = malloc(raw_n);
+  if (!raw) {
+    return -1;
+  }
+  memcpy(raw, skel0, skel0_n);
+  memcpy(raw + skel0_n, frag, 3);
+  memcpy(raw + skel0_n + 3, skel1, skel1_n);
+  exth_n = append_exth(exth, sizeof exth, "猫", 0);
+  head = calloc(1, 16u + head_len + exth_n);
+  if (!head || exth_n == 0) {
+    free(raw);
+    free(head);
+    return -1;
+  }
+  be16p(head + 0, 1);
+  be32p(head + 4, (uint32_t)raw_n);
+  be16p(head + 8, 1);
+  be16p(head + 10, 4096);
+  memcpy(head + 16, "MOBI", 4);
+  be32p(head + 20, head_len);
+  be32p(head + 24, 248);
+  be32p(head + 28, 65001);
+  be32p(head + 36, 8);
+  be32p(head + 0x6C, 0xFFFFFFFFu);
+  be32p(head + 0x80, 0x40);
+  be32p(head + 0xC0, 2);
+  be32p(head + 0xF8, 5);
+  be32p(head + 0xFC, 3);
+  memcpy(head + 16 + head_len, exth, exth_n);
+  memset(recs, 0, sizeof recs);
+  recs[0] = head;
+  lens[0] = 16u + head_len + exth_n;
+  recs[1] = raw;
+  lens[1] = raw_n;
+  recs[2] = calloc(1, 20);
+  if (!recs[2]) {
+    goto done;
+  }
+  memcpy(recs[2], "FDST", 4);
+  be32p(recs[2] + 8, 1);
+  be32p(recs[2] + 12, 0);
+  be32p(recs[2] + 16, (uint32_t)raw_n);
+  lens[2] = 20;
+  if (build_indx_main(&recs[3], &lens[3]) != 0 || build_indx_main(&recs[5], &lens[5]) != 0) {
+    goto done;
+  }
+  skel_ents[0].label = "0";
+  skel_ents[0].has1 = 1;
+  skel_ents[0].t1 = 1;
+  skel_ents[0].has6 = 1;
+  skel_ents[0].t6a = 0;
+  skel_ents[0].t6b = (uint32_t)skel0_n;
+  skel_ents[1].label = "1";
+  skel_ents[1].has1 = 0;
+  skel_ents[1].t1 = 0;
+  skel_ents[1].has6 = 1;
+  skel_ents[1].t6a = (uint32_t)(skel0_n + 3);
+  skel_ents[1].t6b = (uint32_t)skel1_n;
+  frag_ent.label = insert_label;
+  frag_ent.has1 = 0;
+  frag_ent.t1 = 0;
+  frag_ent.has6 = 1;
+  frag_ent.t6a = 0;
+  frag_ent.t6b = 3;
+  if (build_indx_data(skel_ents, 2, &recs[4], &lens[4]) != 0 || build_indx_data(&frag_ent, 1, &recs[6], &lens[6]) != 0) {
+    goto done;
+  }
+  rc = write_palm(path, recs, lens, 7);
+done:
+  for (i = 0; i < 7; i++) {
+    free(recs[i]);
+  }
+  return rc;
+}
+
+static int page_ink(TsBook *book, int w, int h) {
+  uint8_t *page;
+  int n;
+  page = malloc((size_t)w * (size_t)h);
+  if (!page) {
+    return -1;
+  }
+  memset(page, 255, (size_t)w * (size_t)h);
+  if (!ts_render(book, 0, page, w, h)) {
+    free(page);
+    return -1;
+  }
+  n = ink_count(page, w * h);
+  free(page);
+  return n;
+}
+
+static int book_label_is(YomuBook *books, int count, const char *label) {
+  int i;
+  for (i = 0; i < count; i++) {
+    if (strcmp(books[i].label, label) == 0) {
+      return 1;
+    }
+  }
+  return 0;
+}
+
+static void expect_mobi_reject(const char *path, const char *home, const char *token, const char *note) {
+  AppHost host;
+  State st;
+  TsBook *book = ts_open(path, home, NULL, 120, 80);
+  expect(book == NULL, token);
+  if (book) {
+    ts_close(book);
+  }
+  expect(strcmp(ts_error(NULL), token) == 0, token);
+  memset(&host, 0, sizeof host);
+  host.home = home;
+  host.w = 120;
+  host.h = 80;
+  memset(&st, 0, sizeof st);
+  st.host = &host;
+  expect(open_book(&st, path) != 0, note);
+  expect(strcmp(st.note, note) == 0, note);
+}
+
+static void test_mobi(void) {
+  char dir[] = "/tmp/yomu-mobi-XXXXXX";
+  char html[512];
+  char path[256];
+  char name[32];
+  YomuBook *books = NULL;
+  int count = 0;
+  int trunc = 0;
+  int start = 0;
+  int end = 0;
+  int page = -1;
+  TsBook *book;
+  const int w = 120;
+  const int h = 80;
+  expect(mkdtemp(dir) != NULL, "mobi dir");
+  snprintf(html, sizeof html, "<html><body><h1>吾輩</h1><p>%s</p></body></html>", k_line);
+
+  snprintf(path, sizeof path, "%s/Neko.mobi", dir);
+  expect(write_classic_mobi(path, html, "猫", 1, 0, 0, 0, 65001) == 0, "write uncompressed mobi");
+  snprintf(path, sizeof path, "%s/Inu.azw3", dir);
+  expect(write_text(path, "later") == 0, "azw3 placeholder");
+  snprintf(path, sizeof path, "%s/Tori.azw", dir);
+  expect(write_classic_mobi(path, html, "猫", 1, 0, 0, 0, 65001) == 0, "write azw");
+  snprintf(path, sizeof path, "%s/Skip.xtch", dir);
+  expect(write_text(path, "bitmap") == 0, "mobi scan xtch");
+  expect(yomu_scan_books(dir, &books, &count, &trunc) == 0, "mobi scan");
+  expect(count == 3, "library lists mobi azw3 and azw");
+  expect(book_label_is(books, count, "Neko") && book_label_is(books, count, "Inu") &&
+             book_label_is(books, count, "Tori"),
+         "palm stems drop the extension");
+  yomu_free_books(books, count);
+
+  snprintf(path, sizeof path, "%s/Neko.mobi", dir);
+  book = ts_open(path, dir, NULL, w, h);
+  expect(book != NULL, ts_error(NULL));
+  if (book) {
+    expect(strcmp(ts_title(book), "猫") == 0, "mobi title");
+    expect(ts_rtl(book) == 1, "mobi is vertical");
+    expect(ts_chapter_count(book) == 1, "mobi chapter");
+    expect(ts_chapter(book, 0, name, sizeof name, &start, &end) == 1 && strcmp(name, "吾輩") == 0, "mobi heading");
+    expect(page_ink(book, w, h) > 20, "mobi page has ink");
+    ts_close(book);
+  }
+
+  snprintf(path, sizeof path, "%s/Tori.azw", dir);
+  book = ts_open(path, dir, NULL, w, h);
+  expect(book != NULL, ts_error(NULL));
+  if (book) {
+    expect(strcmp(ts_title(book), "猫") == 0, "azw title");
+    ts_close(book);
+  }
+
+  snprintf(path, sizeof path, "%s/Palm.mobi", dir);
+  expect(write_classic_mobi(path, html, "猫", 2, 0, 1, 0, 65001) == 0, "write palmdoc mobi");
+  book = ts_open(path, dir, NULL, w, h);
+  expect(book != NULL, ts_error(NULL));
+  if (book) {
+    expect(ts_chapter(book, 0, name, sizeof name, &start, &end) == 1 && strcmp(name, "吾輩") == 0,
+           "palmdoc heading survives the trailer");
+    expect(page_ink(book, w, h) > 20, "palmdoc page has ink");
+    ts_close(book);
+  }
+
+  snprintf(path, sizeof path, "%s/Inu.azw3", dir);
+  expect(write_kf8(path) == 0, "write kf8");
+  book = ts_open(path, dir, NULL, w, h);
+  expect(book != NULL, ts_error(NULL));
+  if (book) {
+    expect(strcmp(ts_title(book), "猫") == 0, "kf8 title");
+    expect(ts_rtl(book) == 1, "kf8 is vertical");
+    expect(ts_chapter_count(book) == 2, "kf8 lists both chapters");
+    expect(ts_done(book) == 0, "kf8 is not fully indexed yet");
+    expect(ts_chapter(book, 0, name, sizeof name, &start, &end) == 1 && strcmp(name, "猫") == 0 && start >= 0,
+           "kf8 first chapter");
+    start = 0;
+    expect(ts_chapter(book, 1, name, sizeof name, &start, &end) == 1 && strcmp(name, "犬") == 0 && start < 0,
+           "kf8 second chapter waits");
+    expect(page_ink(book, w, h) > 20, "kf8 page has ink");
+    expect(ts_open_chapter(book, 1, &page) == 1 && page >= 0, "kf8 second chapter opens");
+    expect(ts_chapter(book, 1, name, sizeof name, &start, &end) == 1 && start == page, "kf8 open lands on 犬");
+    ts_close(book);
+  }
+
+  snprintf(path, sizeof path, "%s/Locked.azw3", dir);
+  expect(write_classic_mobi(path, html, "猫", 1, 2, 0, 0, 65001) == 0, "write drm");
+  expect_mobi_reject(path, dir, "drm", "この本は保護されています");
+  snprintf(path, sizeof path, "%s/Fixed.azw3", dir);
+  expect(write_classic_mobi(path, html, "猫", 1, 0, 0, 1, 65001) == 0, "write fixed");
+  expect_mobi_reject(path, dir, "fixed layout", "この本は固定レイアウトです");
+  snprintf(path, sizeof path, "%s/Utf16.mobi", dir);
+  expect(write_classic_mobi(path, "x", "x", 1, 0, 0, 0, 65002) == 0, "write utf16");
+  expect_mobi_reject(path, dir, "encoding", "この文字コードは未対応です");
+}
+
 int main(void) {
   test_rotate();
   test_progress_and_scan();
   test_japanese();
   test_typeset();
+  test_mobi();
   test_writing_mode();
   test_face_style();
   test_long_spine();
   test_ui();
   test_reader_gestures();
   test_sleep_stays();
+  test_wake_repaints();
   test_tap_buttons();
   test_chapter_ranges();
   test_current_chapter();

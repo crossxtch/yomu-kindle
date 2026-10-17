@@ -90,7 +90,7 @@ void paint_library(State *st) {
   if (st->truncated) {
     snprintf(hint, sizeof hint, "行をタップ  一覧は途中まで");
   } else if (st->nbooks == 0) {
-    snprintf(hint, sizeof hint, ".epub .txtの本はありません");
+    snprintf(hint, sizeof hint, ".epub .txt .mobi .azw3の本はありません");
   } else {
     snprintf(hint, sizeof hint, "行をタップ");
   }

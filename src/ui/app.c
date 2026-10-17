@@ -241,6 +241,13 @@ int app_run(AppHost *host, const char *initial_path) {
       need_paint = 1;
       continue;
     }
+    if (ev.kind == EV_WAKE) {
+      /* Idle, cover, and power sleeps that powerd started itself. */
+      yomu_log("screensaver wake");
+      st->since_full = 0;
+      need_paint = 1;
+      continue;
+    }
     int dirty = 0;
     switch (st->screen) {
       case SCR_READ:

@@ -58,6 +58,15 @@ static int state_active(const char *state) {
   return strcasecmp(state, "active") == 0;
 }
 
+int kindle_power_panel_active(void) {
+  char state[80];
+  state[0] = '\0';
+  if (!read_power_state(state, sizeof state)) {
+    return 0;
+  }
+  return state_active(state);
+}
+
 /* PW3 and older leave the LED on when lipc flIntensity is 0. KOReader
  * writes these nodes in that case. Newer panels, including Paperwhite 11
  * (fp9966), honor flIntensity 0, and writing their backlight sysfs races
@@ -194,7 +203,7 @@ void kindle_frontlight_release(void) {
 
 /* powerd turns the light back on as the panel wakes. Wait so this write
  * lands after that restore, which is the race KOReader loses on purpose. */
-static void frontlight_after_wake(void) {
+void kindle_power_after_wake(void) {
   struct timespec pause = {0, 300000000L};
   if (!g_fl_held) {
     return;
@@ -341,8 +350,11 @@ void kindle_power_sleep(KindleInput *input) {
       yomu_log("sleep framework is stopped");
     }
   }
+  /* Notes for this sleep are already in the pipe. The next poll would
+   * treat the matching outOfScreenSaver as a second wake. */
+  kindle_input_leave_saver(input);
   if (input) {
     kindle_input_ignore_power(input, 2000);
   }
-  frontlight_after_wake();
+  kindle_power_after_wake();
 }

@@ -1,6 +1,6 @@
 # yomu
 
-A reader for `.epub` and `.txt` books on a jailbroken Kindle. It is a small
+A reader for `.epub`, `.txt`, and DRM-free `.mobi` and `.azw3` books on a jailbroken Kindle. It is a small
 standalone program, the same idea as [KOReader](https://github.com/koreader/koreader)'s
 Kindle launcher: a KUAL menu entry, the Kindle UI paused, and pages drawn
 straight to the e-ink panel. Japanese text is typeset in the app, in vertical
@@ -39,7 +39,7 @@ Eject, then open KUAL or KUALA and choose yomu.
 - **yomu no framework** stops `lab126_gui`. That frees RAM. The
   launcher starts the framework again when yomu exits.
 
-Put `.epub` and `.txt` files in `/mnt/us/yomu/books` on the USB volume. yomu creates
+Put `.epub`, `.txt`, `.mobi`, and `.azw3` files in `/mnt/us/yomu/books` on the USB volume. A `.azw` file uses the same container. The file has to be DRM-free and reflowable: an encrypted store download, a fixed-layout book, and a KFX file stay unopened. yomu creates
 that folder if it is missing. Subfolders are included. yomu starts in
 landscape. On a Paperwhite 11 that is 1648×1236, turned 90° clockwise.
 That orientation is fixed. `YOMU_ROTATE` is ignored. Each page is typeset to that panel. Hidden folders are skipped, and
@@ -193,7 +193,7 @@ compiler.
 src/ui        screens, gestures, and menu text
 src/book      library, progress, type.txt, and the typesetter bridge
 src/paint     FreeType face, gray paint, and the POSIX file layer
-../typeset    book-to-page library (EPUB and txt to glyph runs)
+../typeset    book-to-page library (EPUB, DRM-free MOBI/AZW3, and txt to glyph runs)
 src/kindle    framebuffer, touch, sleep, and main
 src/net       the transfer server and the host HTTP client
 src/util      log and UTF-8

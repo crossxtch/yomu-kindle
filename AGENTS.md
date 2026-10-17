@@ -1,10 +1,10 @@
 # yomu-kindle
 
-Kindle reader for `.epub` and `.txt`. The checkout directory is `yomu-kindle`. On the device the KUAL entry, the binary, and `/mnt/us/yomu` stay `yomu`.
+Kindle reader for `.epub`, `.txt`, and DRM-free `.mobi` / `.azw3`. The checkout directory is `yomu-kindle`. On the device the KUAL entry, the binary, and `/mnt/us/yomu` stay `yomu`.
 
 ## Books and UI
 
-Open `.epub` and `.txt` only. Leave `.mobi`, `.azw3`, and `.xtch` unsupported.
+Open `.epub`, `.txt`, and DRM-free reflowable `.mobi`, `.azw3`, and `.azw`. Leave `.xtch`, encrypted books, fixed-layout books, and KFX unsupported.
 Strings drawn by the C UI stay Japanese. `README.md` and both `INSTALL.txt` files stay English.
 
 ## Device

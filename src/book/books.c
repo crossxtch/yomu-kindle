@@ -72,7 +72,10 @@ static int ends_with(const char *name, const char *ext) {
   return strcasecmp(name + (n - e), ext) == 0;
 }
 
-static int ends_book(const char *name) { return ends_with(name, ".epub") || ends_with(name, ".txt"); }
+static int ends_book(const char *name) {
+  return ends_with(name, ".epub") || ends_with(name, ".txt") || ends_with(name, ".mobi") ||
+         ends_with(name, ".azw3") || ends_with(name, ".azw");
+}
 
 static void stem_label(char *dst, size_t dst_n, const char *path) {
   const char *base = strrchr(path, '/');
@@ -80,9 +83,10 @@ static void stem_label(char *dst, size_t dst_n, const char *path) {
   char stem[LABEL_N];
   snprintf(stem, sizeof stem, "%s", base);
   size_t len = strlen(stem);
-  if (len >= 5 && strcasecmp(stem + (len - 5), ".epub") == 0) {
+  if (len >= 5 && (strcasecmp(stem + (len - 5), ".epub") == 0 || strcasecmp(stem + (len - 5), ".azw3") == 0 ||
+                   strcasecmp(stem + (len - 5), ".mobi") == 0)) {
     stem[len - 5] = '\0';
-  } else if (len >= 4 && strcasecmp(stem + (len - 4), ".txt") == 0) {
+  } else if (len >= 4 && (strcasecmp(stem + (len - 4), ".txt") == 0 || strcasecmp(stem + (len - 4), ".azw") == 0)) {
     stem[len - 4] = '\0';
   }
   if (yomu_text_useful(stem)) {

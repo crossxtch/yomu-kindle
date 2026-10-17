@@ -4,7 +4,7 @@
 #include <stddef.h>
 
 /* One book the library can open. label is the UTF-8 filename stem, or empty
- * when the row should say "本N". Only .epub and .txt are listed. */
+ * when the row should say "本N". .epub, .txt, .mobi, .azw3, and .azw are listed. */
 typedef struct YomuBook {
   char *path;
   char *label;

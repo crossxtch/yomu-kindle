@@ -21,7 +21,10 @@ typedef enum AppEvKind {
   EV_QUIT,
   EV_PAGE_NEXT,
   EV_PAGE_PREV,
-  EV_SLEEP
+  EV_SLEEP,
+  /* The panel went through the system screensaver without this process
+   * asking. The screen underneath may have been overwritten. */
+  EV_WAKE
 } AppEvKind;
 
 typedef struct AppEvent {

@@ -53,13 +53,30 @@ static int path_is_text(const char *path) {
     return 0;
   }
   n = strlen(path);
-  if (n >= 5 && strcasecmp(path + (n - 5), ".epub") == 0) {
+  if (n >= 5 && (strcasecmp(path + (n - 5), ".epub") == 0 || strcasecmp(path + (n - 5), ".azw3") == 0 ||
+                 strcasecmp(path + (n - 5), ".mobi") == 0)) {
     return 1;
   }
-  if (n >= 4 && strcasecmp(path + (n - 4), ".txt") == 0) {
+  if (n >= 4 && (strcasecmp(path + (n - 4), ".txt") == 0 || strcasecmp(path + (n - 4), ".azw") == 0)) {
     return 1;
   }
   return 0;
+}
+
+static const char *open_failure(const char *err) {
+  if (err && strcmp(err, "drm") == 0) {
+    return "この本は保護されています";
+  }
+  if (err && strcmp(err, "fixed layout") == 0) {
+    return "この本は固定レイアウトです";
+  }
+  if (err && strcmp(err, "encoding") == 0) {
+    return "この文字コードは未対応です";
+  }
+  if (err && err[0]) {
+    return err;
+  }
+  return "open";
 }
 
 static void release_open(State *st) {
@@ -111,7 +128,7 @@ int open_book(State *st, const char *path) {
   st->index_badge = 0;
   TsBook *ts = ts_open_progress(path, st->host->home, NULL, st->host->w, st->host->h, open_progress, st);
   if (!ts) {
-    snprintf(st->note, sizeof st->note, "%s", ts_error(NULL));
+    snprintf(st->note, sizeof st->note, "%s", open_failure(ts_error(NULL)));
     yomu_log("open failed %s (%s)", path, ts_error(NULL));
     st->book_path[0] = '\0';
     return -1;

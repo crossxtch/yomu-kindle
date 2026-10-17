@@ -27,4 +27,9 @@ int kindle_input_power_from_grabbed(const KindleInput *input);
 /* Async-signal-safe. Wakes poll with -1. */
 void kindle_input_stop(void);
 
+/* Drop screensaver notes already queued by powerd and clear the saver flag.
+ * A sleep this process waited out paints on its own, so those notes must
+ * not come back as EV_WAKE. */
+void kindle_input_leave_saver(KindleInput *input);
+
 #endif
