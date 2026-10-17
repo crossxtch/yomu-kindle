@@ -9,7 +9,34 @@
 
 static int library_count(const State *st) { return st->nbooks + LIB_BOOKS; }
 
+static void refresh_books(State *st) {
+  if (st->fs && fileserver_changed(st->fs)) {
+    st->rescan = 1;
+  }
+  if (!st->rescan) {
+    return;
+  }
+  yomu_free_books(st->books, st->nbooks);
+  st->books = NULL;
+  st->nbooks = 0;
+  int trunc = 0;
+  if (yomu_scan_books(st->host->root, &st->books, &st->nbooks, &trunc) != 0) {
+    snprintf(st->note, sizeof st->note, "本のフォルダを開けません");
+  } else {
+    st->truncated = trunc;
+  }
+  int total = library_count(st);
+  if (st->lib_cursor >= total) {
+    st->lib_cursor = total - 1;
+  }
+  if (st->lib_cursor < 0) {
+    st->lib_cursor = 0;
+  }
+  st->rescan = 0;
+}
+
 void paint_library(State *st) {
+  refresh_books(st);
   AppHost *host = st->host;
   Layout layout = layout_of(host->w, host->h);
   st->nhots = 0;
@@ -38,7 +65,7 @@ void paint_library(State *st) {
       int text_y = y + layout.pad;
       draw_text(host->gray, host->w, host->h, host->w, text_x, text_y, layout.scale, "転送", 0);
       draw_text(host->gray, host->w, host->h, host->w, text_x, text_y + 8 * layout.scale + 2, layout.scale,
-                "ファイルを送る", 80);
+                st->fs ? "動作中" : "ファイルを送る", 80);
       add_hot(st, 0, y, host->w, layout.row_h, LIB_TRANSFER);
       continue;
     }
@@ -128,24 +155,6 @@ int handle_library(State *st, const AppEvent *ev) {
 int back_to_library(State *st) {
   st->screen = SCR_LIB;
   st->note[0] = '\0';
-  if (st->rescan) {
-    yomu_free_books(st->books, st->nbooks);
-    st->books = NULL;
-    st->nbooks = 0;
-    int trunc = 0;
-    if (yomu_scan_books(st->host->root, &st->books, &st->nbooks, &trunc) != 0) {
-      snprintf(st->note, sizeof st->note, "本のフォルダを開けません");
-    } else {
-      st->truncated = trunc;
-    }
-    int total = library_count(st);
-    if (st->lib_cursor >= total) {
-      st->lib_cursor = total - 1;
-    }
-    if (st->lib_cursor < 0) {
-      st->lib_cursor = 0;
-    }
-    st->rescan = 0;
-  }
+  refresh_books(st);
   return 1;
 }

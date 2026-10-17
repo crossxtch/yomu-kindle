@@ -116,20 +116,23 @@ Progress is stored in `/mnt/us/yomu/progress.tsv`. The log is
 
 ## File transfer
 
-The first library row is 転送. While that screen is open, yomu serves
+The first library row is 転送. Opening it serves
 the book folder (`YOMU_ROOT`, normally `/mnt/us/yomu/books`). A browser on the same
-Wi-Fi opens the address
-shown on the screen. The page lists, uploads, downloads, renames, moves,
-and deletes files. Tap 停止 to close the server.
+Wi-Fi opens `http://yomu.local/` when the server is on port 80, or
+`http://yomu.local:8080/` otherwise. The screen also shows the numeric
+address. The page lists, uploads, downloads, renames, moves,
+and deletes files. Tap 戻る to leave the screen. The server keeps running
+until yomu exits. The library row then reads 動作中.
 
 There is no password. Anyone who can reach the Kindle can change files in
-that folder until you leave the screen. Names that start with a dot are
+that folder until yomu exits. Names that start with a dot are
 hidden, and so are `system`, `lost+found`, and `extensions` at the top of
 the folder.
 
 The server listens on port 80, or on 8080 if 80 is taken. `YOMU_PORT`
-picks one port and does not try the other. On the Kindle, yomu adds an
-iptables rule for that port and removes it when the screen closes. Connect
+picks one port and does not try the other. On the Kindle, yomu adds
+iptables rules for that TCP port and for UDP 5353, and removes them when
+yomu exits. Connect
 Wi-Fi before opening 転送, and use **yomu** so the framework
 stays up and Wi-Fi stays connected. **yomu no framework** can
 drop the network. If the screen says 「Wi-Fiアドレスがありません」, connect and open

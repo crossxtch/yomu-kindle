@@ -2,6 +2,7 @@
 
 #include "filepage.h"
 #include "log.h"
+#include "mdns.h"
 
 #include <arpa/inet.h>
 #include <ctype.h>
@@ -37,7 +38,7 @@
 struct FileServer {
   char root[FS_PATH];
   char ip[64];
-  char urls[2][80];
+  char urls[3][80];
   int nurls;
   int port;
   int listen_fd;
@@ -46,6 +47,7 @@ struct FileServer {
   atomic_int stop;
   atomic_int dirty;
   pthread_t thread;
+  Mdns *mdns;
 };
 
 typedef struct Ent {
@@ -155,26 +157,49 @@ static int hex_val(char c) {
   return -1;
 }
 
-static int url_decode(char *s, int plus) {
-  char *w = s;
-  const char *r = s;
-  while (*r) {
-    if (*r == '%') {
-      int hi = hex_val(r[1]);
-      int lo = r[1] ? hex_val(r[2]) : -1;
-      if (hi < 0 || lo < 0) {
+/* Percent-encoding is longer than the decoded name. cap is the decoded size,
+ * including the trailing NUL. A name that fits is kept whole; a name that does
+ * not fit, or a bad % sequence, is rejected rather than cut down. */
+static int url_decode_n(const char *src, size_t src_n, char *dst, size_t cap, int plus) {
+  size_t n = 0;
+  size_t i = 0;
+  if (!dst || cap == 0) {
+    return -1;
+  }
+  if (!src) {
+    dst[0] = '\0';
+    return 0;
+  }
+  while (i < src_n) {
+    unsigned char c;
+    if (src[i] == '%') {
+      int hi;
+      int lo;
+      if (i + 2 >= src_n) {
+        dst[0] = '\0';
         return -1;
       }
-      *w++ = (char)((hi << 4) | lo);
-      r += 3;
-    } else if (plus && *r == '+') {
-      *w++ = ' ';
-      r++;
+      hi = hex_val(src[i + 1]);
+      lo = hex_val(src[i + 2]);
+      if (hi < 0 || lo < 0) {
+        dst[0] = '\0';
+        return -1;
+      }
+      c = (unsigned char)((hi << 4) | lo);
+      i += 3;
+    } else if (plus && src[i] == '+') {
+      c = ' ';
+      i++;
     } else {
-      *w++ = *r++;
+      c = (unsigned char)src[i++];
     }
+    if (n + 1 >= cap) {
+      dst[0] = '\0';
+      return -1;
+    }
+    dst[n++] = (char)c;
   }
-  *w = '\0';
+  dst[n] = '\0';
   return 0;
 }
 
@@ -300,12 +325,7 @@ static int form_get(const char *body, const char *key, char *out, size_t cap) {
     const char *eq = memchr(p, '=', n);
     if (eq && (size_t)(eq - p) == klen && memcmp(p, key, klen) == 0) {
       size_t vn = n - klen - 1;
-      if (vn >= cap) {
-        return -1;
-      }
-      memcpy(out, eq + 1, vn);
-      out[vn] = '\0';
-      return url_decode(out, 1);
+      return url_decode_n(eq + 1, vn, out, cap, 1);
     }
     if (!amp) {
       break;
@@ -316,6 +336,42 @@ static int form_get(const char *body, const char *key, char *out, size_t cap) {
 }
 
 static int header_match(const char *name, const char *want) { return strcasecmp(name, want) == 0; }
+
+/* The target may contain blanks ("My Book.epub"). The version token, when
+ * present, is the last " HTTP/" on the line. */
+static int request_target(const char *line, char *method, size_t method_cap, char *target, size_t target_cap) {
+  const char *sp = line ? strchr(line, ' ') : NULL;
+  if (!sp || sp == line) {
+    return -1;
+  }
+  size_t mlen = (size_t)(sp - line);
+  if (mlen + 1 > method_cap) {
+    return -1;
+  }
+  memcpy(method, line, mlen);
+  method[mlen] = '\0';
+  const char *start = sp + 1;
+  while (*start == ' ' || *start == '\t') {
+    start++;
+  }
+  const char *version = NULL;
+  for (const char *p = start; *p; p++) {
+    if (*p == ' ' && strncmp(p + 1, "HTTP/", 5) == 0) {
+      version = p;
+    }
+  }
+  const char *end = version ? version : start + strlen(start);
+  while (end > start && (end[-1] == ' ' || end[-1] == '\t')) {
+    end--;
+  }
+  size_t n = (size_t)(end - start);
+  if (n == 0 || n + 1 > target_cap) {
+    return -1;
+  }
+  memcpy(target, start, n);
+  target[n] = '\0';
+  return 0;
+}
 
 static int read_request(int fd, Req *req) {
   memset(req, 0, sizeof *req);
@@ -370,7 +426,7 @@ static int read_request(int fd, Req *req) {
     *nl = '\0';
     if (first) {
       char target[FS_PATH];
-      if (sscanf(cursor, "%7s %1023s", req->method, target) != 2) {
+      if (request_target(cursor, req->method, sizeof req->method, target, sizeof target) != 0) {
         reply_text(fd, 400, "Bad Request", "リクエストが不正です");
         return -1;
       }
@@ -398,14 +454,12 @@ static int read_request(int fd, Req *req) {
           }
           req->content_length = n;
         } else if (header_match(cursor, "X-File-Path")) {
-          snprintf(req->file_path, sizeof req->file_path, "%s", val);
-          if (url_decode(req->file_path, 0) != 0) {
+          if (url_decode_n(val, strlen(val), req->file_path, sizeof req->file_path, 0) != 0) {
             reply_text(fd, 400, "Bad Request", "パスが不正です");
             return -1;
           }
         } else if (header_match(cursor, "X-File-Name")) {
-          snprintf(req->file_name, sizeof req->file_name, "%s", val);
-          if (url_decode(req->file_name, 0) != 0) {
+          if (url_decode_n(val, strlen(val), req->file_name, sizeof req->file_name, 0) != 0) {
             reply_text(fd, 400, "Bad Request", "名前が不正です");
             return -1;
           }
@@ -630,6 +684,50 @@ static int handle_list(FileServer *fs, int fd, const Req *req) {
   return rc;
 }
 
+static int append_pct(char *out, size_t cap, size_t *used, unsigned char c) {
+  static const char hex[] = "0123456789ABCDEF";
+  if (*used + 3 >= cap) {
+    return -1;
+  }
+  out[(*used)++] = '%';
+  out[(*used)++] = hex[c >> 4];
+  out[(*used)++] = hex[c & 0xf];
+  return 0;
+}
+
+/* Quoted filename keeps a blank. filename* is percent-encoded UTF-8 for
+ * clients that cut the quoted name at the first blank. */
+static int disposition(const char *name, char *out, size_t cap) {
+  int n = snprintf(out, cap, "Content-Disposition: attachment; filename=\"");
+  if (n < 0 || (size_t)n >= cap) {
+    return -1;
+  }
+  size_t used = (size_t)n;
+  for (const unsigned char *p = (const unsigned char *)(name ? name : ""); *p; p++) {
+    if (*p == '\\' || *p == '"' || used + 1 >= cap) {
+      return -1;
+    }
+    out[used++] = (char)*p;
+  }
+  n = snprintf(out + used, cap - used, "\"; filename*=UTF-8''");
+  if (n < 0 || (size_t)n >= cap - used) {
+    return -1;
+  }
+  used += (size_t)n;
+  for (const unsigned char *p = (const unsigned char *)(name ? name : ""); *p; p++) {
+    if (append_pct(out, cap, &used, *p) != 0) {
+      return -1;
+    }
+  }
+  if (used + 3 > cap) {
+    return -1;
+  }
+  out[used++] = '\r';
+  out[used++] = '\n';
+  out[used] = '\0';
+  return 0;
+}
+
 static int handle_download(FileServer *fs, int fd, const Req *req) {
   char rel[FS_PATH];
   int missing = form_get(req->query, "path", rel, sizeof rel);
@@ -655,9 +753,12 @@ static int handle_download(FileServer *fs, int fd, const Req *req) {
   }
   const char *base = strrchr(full, '/');
   base = base ? base + 1 : full;
-  char extra[320];
-  snprintf(extra, sizeof extra, "Content-Disposition: attachment; filename=\"%s\"\r\n", base);
-  char hdr[512];
+  char extra[1200];
+  if (disposition(base, extra, sizeof extra) != 0) {
+    close(file);
+    return reply_text(fd, 500, "Internal Server Error", "ファイルを取得できませんでした");
+  }
+  char hdr[1600];
   int n = snprintf(hdr, sizeof hdr,
                    "HTTP/1.1 200 OK\r\n"
                    "Content-Type: application/octet-stream\r\n"
@@ -1004,7 +1105,8 @@ static int handle_client(FileServer *fs, int fd) {
     rc = handle_status(fs, fd);
   } else if (strcmp(req.method, "GET") == 0 && strcmp(req.path, "/api/files") == 0) {
     rc = handle_list(fs, fd, &req);
-  } else if (strcmp(req.method, "GET") == 0 && strcmp(req.path, "/download") == 0) {
+  } else if (strcmp(req.method, "GET") == 0 &&
+             (strcmp(req.path, "/download") == 0 || strncmp(req.path, "/download/", 10) == 0)) {
     rc = handle_download(fs, fd, &req);
   } else if (strcmp(req.method, "POST") == 0 && strcmp(req.path, "/upload") == 0) {
     rc = handle_upload(fs, fd, &req);
@@ -1038,18 +1140,40 @@ static int handle_client(FileServer *fs, int fd) {
 static void *serve_loop(void *arg) {
   FileServer *fs = arg;
   while (!atomic_load(&fs->stop)) {
-    struct pollfd pfd;
-    pfd.fd = fs->listen_fd;
-    pfd.events = POLLIN;
-    pfd.revents = 0;
-    int pr = poll(&pfd, 1, 200);
+    struct pollfd pfds[2];
+    pfds[0].fd = fs->listen_fd;
+    pfds[0].events = POLLIN;
+    pfds[0].revents = 0;
+    int np = 1;
+    int wait = 200;
+    if (fs->mdns) {
+      pfds[1].fd = mdns_fd(fs->mdns);
+      pfds[1].events = POLLIN;
+      pfds[1].revents = 0;
+      np = 2;
+      int aw = mdns_announce_wait(fs->mdns);
+      if (aw >= 0 && aw < wait) {
+        wait = aw;
+      }
+    }
+    int pr = poll(pfds, np, wait);
     if (pr < 0) {
       if (errno == EINTR) {
         continue;
       }
       break;
     }
-    if (pr == 0 || (pfd.revents & POLLIN) == 0) {
+    if (fs->mdns) {
+      if (pfds[1].revents & POLLIN) {
+        mdns_on_readable(fs->mdns);
+      }
+      mdns_announce_due(fs->mdns);
+      if (pfds[1].revents & (POLLERR | POLLNVAL)) {
+        mdns_stop(fs->mdns);
+        fs->mdns = NULL;
+      }
+    }
+    if (pr == 0 || (pfds[0].revents & POLLIN) == 0) {
       continue;
     }
     int fd = accept(fs->listen_fd, NULL, NULL);
@@ -1078,13 +1202,36 @@ static int if_score(const char *name) {
   return 1;
 }
 
-static void collect_urls(FileServer *fs) {
+static void add_mdns_url(FileServer *fs) {
+  char url[80];
+  int n;
+  if (fs->port == 80) {
+    n = snprintf(url, sizeof url, "http://yomu.local/");
+  } else {
+    n = snprintf(url, sizeof url, "http://yomu.local:%d/", fs->port);
+  }
+  if (n <= 0 || n >= (int)sizeof url) {
+    return;
+  }
+  int keep = fs->nurls > 2 ? 2 : fs->nurls;
+  for (int i = keep; i > 0; i--) {
+    memcpy(fs->urls[i], fs->urls[i - 1], sizeof fs->urls[i]);
+  }
+  memcpy(fs->urls[0], url, (size_t)n + 1);
+  fs->nurls = keep + 1;
+}
+
+static void collect_urls(FileServer *fs, uint32_t *mdns_addr, unsigned *mdns_ifindex) {
+  *mdns_addr = 0;
+  *mdns_ifindex = 0;
   struct ifaddrs *list = NULL;
   if (getifaddrs(&list) != 0) {
     return;
   }
   typedef struct Cand {
     char ip[40];
+    uint32_t addr;
+    unsigned ifindex;
     int score;
   } Cand;
   Cand cands[8];
@@ -1115,6 +1262,8 @@ static void collect_urls(FileServer *fs) {
       continue;
     }
     snprintf(cands[n].ip, sizeof cands[n].ip, "%s", ip);
+    cands[n].addr = sin->sin_addr.s_addr;
+    cands[n].ifindex = if_nametoindex(ifa->ifa_name);
     cands[n].score = if_score(ifa->ifa_name);
     n++;
   }
@@ -1142,6 +1291,10 @@ static void collect_urls(FileServer *fs) {
     } else {
       snprintf(fs->ip, sizeof fs->ip, "%s:%d", cands[0].ip, fs->port);
     }
+  }
+  if (n > 0 && cands[0].score == 0 && cands[0].ifindex != 0) {
+    *mdns_addr = cands[0].addr;
+    *mdns_ifindex = cands[0].ifindex;
   }
 }
 
@@ -1223,11 +1376,20 @@ FileServer *fileserver_start(const char *root, int port) {
     fcntl(fd, F_SETFL, flags | O_NONBLOCK);
   }
   fs->listen_fd = fd;
-  collect_urls(fs);
+  uint32_t mdns_addr = 0;
+  unsigned mdns_ifindex = 0;
+  collect_urls(fs, &mdns_addr, &mdns_ifindex);
   if (port != 0) {
     firewall_open(fs);
   }
+  if (mdns_addr) {
+    fs->mdns = mdns_start(mdns_addr, fs->port, mdns_ifindex);
+    if (fs->mdns) {
+      add_mdns_url(fs);
+    }
+  }
   if (pthread_create(&fs->thread, NULL, serve_loop, fs) != 0) {
+    mdns_stop(fs->mdns);
     firewall_close(fs);
     close(fd);
     free(fs);
@@ -1249,11 +1411,20 @@ int fileserver_stop(FileServer *fs) {
   if (fs->listen_fd >= 0) {
     close(fs->listen_fd);
   }
+  mdns_stop(fs->mdns);
+  fs->mdns = NULL;
   firewall_close(fs);
   int dirty = atomic_load(&fs->dirty);
   yomu_log("transfer stopped");
   free(fs);
   return dirty ? 1 : 0;
+}
+
+int fileserver_changed(FileServer *fs) {
+  if (!fs) {
+    return 0;
+  }
+  return atomic_exchange(&fs->dirty, 0) ? 1 : 0;
 }
 
 int fileserver_port(const FileServer *fs) { return fs ? fs->port : 0; }

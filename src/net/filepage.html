@@ -353,7 +353,8 @@ function load() {
         } else {
           const dl = document.createElement("a");
           dl.className = "btn";
-          dl.href = "/download?path=" + encodeURIComponent(full);
+          dl.href = "/download/" + encodeURIComponent(item.name) + "?path=" + encodeURIComponent(full);
+          dl.download = item.name;
           dl.textContent = "取得";
           actions.appendChild(dl);
         }

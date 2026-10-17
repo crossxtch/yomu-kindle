@@ -52,6 +52,7 @@ CORE_SRCS := \
 	src/ui/screen_xfer.c \
 	src/book/typeface.c \
 	src/ui/app.c \
+	src/net/mdns.c \
 	src/net/fileserver.c
 
 HOST_SRCS := $(CORE_SRCS) src/net/http.c

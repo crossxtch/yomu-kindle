@@ -15,9 +15,13 @@ FileServer *fileserver_start(const char *root, int port);
  */
 int fileserver_stop(FileServer *fs);
 
+/* 1 when a file changed since the last call. Clears that flag. */
+int fileserver_changed(FileServer *fs);
+
 int fileserver_port(const FileServer *fs);
 
-/* Writes up to max URLs, for example http://192.168.1.5:8080/ .
+/* Writes up to max URLs. http://yomu.local/ is first while multicast DNS
+ * is running, then numeric addresses such as http://192.168.1.5:8080/ .
  * Loopback addresses are left out. Returns how many were written.
  */
 int fileserver_urls(const FileServer *fs, char urls[][80], int max);

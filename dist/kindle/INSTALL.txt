@@ -15,9 +15,11 @@ creates that folder if it is missing. yomu starts in landscape, turned 90
 degrees (1648x1236 on a Paperwhite 11), and typesets each page to that panel.
 That orientation is fixed.
 
-The first library row is 転送. While that screen is open, a browser
-on the same Wi-Fi can upload and download files in yomu/books. The
-screen shows the address. There is no password. Tap 停止 to close it.
+The first library row is 転送. A browser on the same Wi-Fi can upload
+and download files in yomu/books. The screen shows http://yomu.local/
+(or http://yomu.local:8080/ when 80 is busy) and the numeric address.
+There is no password. Tap 戻る to leave the screen. The server keeps
+running until yomu exits.
 It uses port 80, or 8080 if 80 is busy. Set YOMU_PORT to force one
 port. Connect Wi-Fi first, and launch yomu so Wi-Fi stays up.
 yomu no framework can drop the network.

@@ -29,14 +29,23 @@ static int parse_port(const char *s, int *out) {
   return 0;
 }
 
-/* YOMU_PORT, when set, is the only port. Otherwise try 80, then 8080. */
+/* YOMU_PORT, when set, is the only port. Otherwise try 80, then 8080.
+ * A running server stays up across visits. It restarts only when it has
+ * no address yet, so a later Wi-Fi connection can be picked up.
+ */
 int enter_xfer(State *st) {
-  if (st->fs) {
-    fileserver_stop(st->fs);
-    st->fs = NULL;
-  }
   st->screen = SCR_XFER;
   st->note[0] = '\0';
+  if (st->fs) {
+    char urls[1][80];
+    if (fileserver_urls(st->fs, urls, 1) > 0) {
+      return 1;
+    }
+    if (fileserver_stop(st->fs)) {
+      st->rescan = 1;
+    }
+    st->fs = NULL;
+  }
   const char *root = st->host->root;
   if (!root || !root[0]) {
     return 1;
@@ -97,19 +106,11 @@ void paint_xfer(State *st) {
   }
   Chrome chrome;
   list_chrome(&layout, host->h, 0, 0, 1, &chrome);
-  paint_button(st, &layout, 0, chrome.bar_y, host->w, chrome.bar_h, "停止", HOT_BACK);
+  paint_button(st, &layout, 0, chrome.bar_y, host->w, chrome.bar_h, "戻る", HOT_BACK);
   paint_footer(st, &layout, "");
 }
 
-static int leave_xfer(State *st) {
-  if (st->fs) {
-    if (fileserver_stop(st->fs)) {
-      st->rescan = 1;
-    }
-    st->fs = NULL;
-  }
-  return back_to_library(st);
-}
+static int leave_xfer(State *st) { return back_to_library(st); }
 
 int handle_xfer(State *st, const AppEvent *ev) {
   if (ev->kind == EV_TAP) {
