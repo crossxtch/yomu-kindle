@@ -76,6 +76,10 @@ typedef struct State {
   int index_total;
   int index_stall;
   int index_badge;
+  /* Home-header minute as unix time / 60. -1 hides the clock. */
+  int64_t clock_min;
+  /* Quarter-hour offset painted into the home clock. */
+  int clock_q;
 } State;
 
 Layout layout_of(int width, int height);
@@ -97,6 +101,12 @@ int menu_text_scale(const Layout *layout);
 void paint_library(State *st);
 int handle_library(State *st, const AppEvent *ev);
 int back_to_library(State *st);
+/* Header slot for HH:MM. 0 when the title and the count leave no room. */
+int library_clock_box(const Layout *layout, int width, const char *count, int *x, int *y, int *w, int *h);
+/* Milliseconds until the next minute. -1 when the home clock is off. */
+int library_clock_wait_ms(const State *st);
+/* Draw the new minute and partial-refresh it. 1 when the panel was updated. */
+int refresh_library_clock(State *st);
 
 int open_book(State *st, const char *path);
 void close_book(State *st);

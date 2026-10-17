@@ -227,6 +227,16 @@ footer {
     <div class="panel-head">ファイル</div>
     <div id="list"></div>
   </section>
+  <section class="panel" style="margin-top:16px">
+    <div class="panel-head">端末</div>
+    <div class="setting">
+      <div class="meta">
+        <div class="name">タイムゾーン</div>
+        <div class="sub">時計のUTCオフセット</div>
+      </div>
+      <select id="tzSelect"></select>
+    </div>
+  </section>
   <div id="status"></div>
   <footer id="foot">yomu</footer>
 </div>
@@ -515,12 +525,41 @@ dropZone.addEventListener("drop", e => {
 document.addEventListener("dragover", e => e.preventDefault());
 document.addEventListener("drop", e => e.preventDefault());
 
+function tzLabel(q) {
+  const mins = (q - 48) * 15;
+  const sign = mins < 0 ? "-" : "+";
+  const abs = Math.abs(mins);
+  return "UTC" + sign + Math.floor(abs / 60) + ":" + String(abs % 60).padStart(2, "0");
+}
+
+const tzSelect = document.getElementById("tzSelect");
+for (let q = 0; q <= 104; q++) {
+  const opt = document.createElement("option");
+  opt.value = q;
+  opt.textContent = tzLabel(q);
+  tzSelect.appendChild(opt);
+}
+tzSelect.value = "48";
+tzSelect.onchange = () => {
+  fetch("/api/timezone", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: "offsetQ=" + encodeURIComponent(tzSelect.value)
+  })
+    .then(r => {
+      if (!r.ok) throw new Error("保存できませんでした");
+      status("タイムゾーンを " + tzLabel(+tzSelect.value) + " に設定しました", "ok");
+    })
+    .catch(e => status("エラー: " + e, "bad"));
+};
+
 fetch("/api/status").then(r => r.json()).then(s => {
   const bits = ["yomu"];
   if (s.version) bits.push(s.version);
   if (s.ssid) bits.push(s.ssid);
   if (s.ip) bits.push(s.ip);
   document.getElementById("foot").textContent = bits.join("  ·  ");
+  if (s.utcOffsetQ !== undefined) tzSelect.value = String(s.utcOffsetQ);
 }).catch(() => {});
 
 load();

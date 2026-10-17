@@ -1,5 +1,6 @@
 #include "fileserver.h"
 
+#include "clockpref.h"
 #include "filepage.h"
 #include "log.h"
 #include "mdns.h"
@@ -1070,11 +1071,32 @@ static int handle_upload(FileServer *fs, int fd, Req *req) {
 
 static int handle_status(FileServer *fs, int fd) {
   char json[256];
-  int n = snprintf(json, sizeof json, "{\"version\":\"yomu\",\"ip\":\"%s\",\"ssid\":\"\"}", fs->ip);
+  int n = snprintf(json, sizeof json, "{\"version\":\"yomu\",\"ip\":\"%s\",\"ssid\":\"\",\"utcOffsetQ\":%d}", fs->ip,
+                   clock_offset_q());
   if (n < 0 || (size_t)n >= sizeof json) {
     return reply_text(fd, 500, "Internal Server Error", "状態を取得できませんでした");
   }
   return reply(fd, 200, "OK", "application/json", NULL, json, (size_t)n);
+}
+
+/* offsetQ is quarter-hours biased by 48: 0 is UTC−12, 48 is UTC+0, 104 is UTC+14. */
+static int handle_timezone(FileServer *fs, int fd, const char *body) {
+  char raw[16];
+  char *end = NULL;
+  long q;
+  (void)fs;
+  if (form_get(body, "offsetQ", raw, sizeof raw) != 0 || !raw[0]) {
+    return reply_text(fd, 400, "Bad Request", "offsetQ がありません");
+  }
+  q = strtol(raw, &end, 10);
+  if (end == raw || (end && *end != '\0') || q < 0 || q > 104) {
+    return reply_text(fd, 400, "Bad Request", "offsetQ は 0 から 104 です");
+  }
+  if (clock_offset_set((int)q) != 0) {
+    return reply_text(fd, 500, "Internal Server Error", "保存できませんでした");
+  }
+  yomu_log("transfer timezone q=%d", (int)q);
+  return reply_text(fd, 200, "OK", "OK");
 }
 
 static int handle_client(FileServer *fs, int fd) {
@@ -1112,7 +1134,7 @@ static int handle_client(FileServer *fs, int fd) {
     rc = handle_upload(fs, fd, &req);
   } else if (strcmp(req.method, "POST") == 0 &&
              (strcmp(req.path, "/mkdir") == 0 || strcmp(req.path, "/rename") == 0 || strcmp(req.path, "/move") == 0 ||
-              strcmp(req.path, "/delete") == 0)) {
+              strcmp(req.path, "/delete") == 0 || strcmp(req.path, "/api/timezone") == 0)) {
     char *body = NULL;
     size_t body_len = 0;
     if (take_body(fd, &req, &body, &body_len) != 0) {
@@ -1125,6 +1147,8 @@ static int handle_client(FileServer *fs, int fd) {
       rc = handle_rename(fs, fd, body);
     } else if (strcmp(req.path, "/move") == 0) {
       rc = handle_move(fs, fd, body);
+    } else if (strcmp(req.path, "/api/timezone") == 0) {
+      rc = handle_timezone(fs, fd, body);
     } else {
       rc = handle_delete(fs, fd, body);
     }

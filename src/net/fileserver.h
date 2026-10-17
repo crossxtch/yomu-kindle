@@ -3,7 +3,7 @@
 
 /* HTTP file manager for one folder. It serves the page in
  * src/net/filepage.html and the list/upload/download/mkdir/rename/move/delete
- * calls that page makes.
+ * calls that page makes. POST /api/timezone stores the shelf-clock offset.
  * The server runs until fileserver_stop. port 0 asks the OS for a free port.
  */
 typedef struct FileServer FileServer;

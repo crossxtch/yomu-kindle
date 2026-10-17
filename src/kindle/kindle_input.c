@@ -933,8 +933,9 @@ int kindle_input_poll(KindleInput *input, AppEvent *event, int timeout_ms) {
         return 1;
       }
       /* The one-second wake is only so a missed out event can be noticed.
-       * A caller that asked to block should not see a timeout. */
-      if (timeout_ms < 0 && input->in_saver) {
+       * A caller that asked to wait should not see that probe as a timeout.
+       * timeout 0 still returns, so indexing can keep stepping. */
+      if (input->in_saver && timeout_ms != 0) {
         continue;
       }
       memset(event, 0, sizeof *event);

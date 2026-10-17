@@ -43,6 +43,7 @@ CORE_SRCS := \
 	src/book/progress.c \
 	src/book/books.c \
 	src/ui/screen.c \
+	src/ui/clockpref.c \
 	src/ui/screen_library.c \
 	src/ui/screen_reader.c \
 	src/ui/screen_menu.c \

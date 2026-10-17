@@ -1,5 +1,6 @@
 #include "app.h"
 #include "books.h"
+#include "clockpref.h"
 #include "draw.h"
 #include "font.h"
 #include "progress.h"
@@ -2915,6 +2916,110 @@ static void test_mobi(void) {
   expect_mobi_reject(path, dir, "encoding", "この文字コードは未対応です");
 }
 
+static int g_clock_presents;
+static int g_clock_full;
+static int g_clock_x, g_clock_y, g_clock_w, g_clock_h;
+
+static void clock_present(AppHost *host, int x, int y, int w, int h, int full) {
+  (void)host;
+  g_clock_presents++;
+  g_clock_full = full;
+  g_clock_x = x;
+  g_clock_y = y;
+  g_clock_w = w;
+  g_clock_h = h;
+}
+
+static int rect_ink(const uint8_t *gray, int stride, int x, int y, int w, int h) {
+  int n = 0;
+  int yy;
+  int xx;
+  for (yy = y; yy < y + h; yy++) {
+    for (xx = x; xx < x + w; xx++) {
+      if (gray[(size_t)yy * (size_t)stride + (size_t)xx] < 250) {
+        n++;
+      }
+    }
+  }
+  return n;
+}
+
+/* 400px is scale 2. HH:MM is 80px and sits between yomu and the count. */
+static void test_library_clock(void) {
+  const int width = 400;
+  const int height = 200;
+  int x = 0;
+  int y = 0;
+  int w = 0;
+  int h = 0;
+  int wait;
+  Layout layout;
+  uint8_t *gray;
+  AppHost host;
+  State st;
+  uint8_t *narrow;
+  AppHost small;
+  State tiny;
+  yomu_font_open();
+  layout = layout_of(width, height);
+  expect(library_clock_box(&layout, width, "0", &x, &y, &w, &h) == 1, "wide shelf has a clock");
+  expect(w == 80 && h == 16 && y == 8 && x == 160, "clock is centered in the header");
+  layout = layout_of(120, height);
+  expect(library_clock_box(&layout, 120, "0", &x, &y, &w, &h) == 0, "narrow shelf keeps the title");
+
+  gray = malloc((size_t)width * (size_t)height);
+  expect(gray != NULL, "clock gray");
+  if (!gray) {
+    return;
+  }
+  memset(gray, 255, (size_t)width * (size_t)height);
+  memset(&host, 0, sizeof host);
+  host.w = width;
+  host.h = height;
+  host.gray = gray;
+  host.present = clock_present;
+  memset(&st, 0, sizeof st);
+  st.host = &host;
+  st.screen = SCR_LIB;
+  g_clock_presents = 0;
+  paint_library(&st);
+  expect(g_clock_presents == 0, "painting the shelf does not refresh early");
+  expect(st.clock_min > 0, "shelf remembers the minute");
+  expect(rect_ink(gray, width, 160, 8, 80, 16) > 0, "header shows the time");
+  expect(gray[8 * width + 159] == 255, "the clock stays clear of the title");
+  wait = library_clock_wait_ms(&st);
+  expect(wait >= 1 && wait <= 60000, "the clock waits until the next minute");
+
+  st.clock_min -= 1;
+  expect(refresh_library_clock(&st) == 1, "a new minute updates the clock");
+  expect(g_clock_presents == 1 && g_clock_full == 0, "the minute is a partial refresh");
+  expect(g_clock_x == 160 && g_clock_y == 8 && g_clock_w == 80 && g_clock_h == 16, "only the clock is refreshed");
+  expect(refresh_library_clock(&st) == 0 && g_clock_presents == 1, "the same minute stays put");
+  expect(clock_offset_set(84) == 0, "tokyo offset");
+  expect(refresh_library_clock(&st) == 1 && g_clock_presents == 2, "a new offset redraws the clock");
+  clock_offset_load(NULL);
+  free(gray);
+
+  narrow = malloc(120 * 200);
+  expect(narrow != NULL, "narrow clock gray");
+  if (!narrow) {
+    return;
+  }
+  memset(narrow, 255, 120 * 200);
+  memset(&small, 0, sizeof small);
+  small.w = 120;
+  small.h = height;
+  small.gray = narrow;
+  small.present = clock_present;
+  memset(&tiny, 0, sizeof tiny);
+  tiny.host = &small;
+  tiny.screen = SCR_LIB;
+  paint_library(&tiny);
+  expect(tiny.clock_min == -1, "a narrow shelf hides the clock");
+  expect(library_clock_wait_ms(&tiny) == -1, "a hidden clock does not wake the poll");
+  free(narrow);
+}
+
 int main(void) {
   test_rotate();
   test_progress_and_scan();
@@ -2929,6 +3034,7 @@ int main(void) {
   test_sleep_stays();
   test_wake_repaints();
   test_tap_buttons();
+  test_library_clock();
   test_chapter_ranges();
   test_current_chapter();
   test_index_continues();

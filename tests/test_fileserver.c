@@ -1,4 +1,5 @@
 #include "app.h"
+#include "clockpref.h"
 #include "fileserver.h"
 #include "http.h"
 #include "mdns.h"
@@ -517,8 +518,41 @@ static void test_mdns(void) {
   expect(mdns_reply(q, 11, addr, 80, 5353, out, sizeof out, &unicast) == 0, "short packet");
 }
 
+static void test_clock_offset(void) {
+  char buf[8];
+  char home[] = "/tmp/yomu-clock-XXXXXX";
+  char path[512];
+  char got[64];
+  expect(clock_format(0, 48, buf, sizeof buf) == 1 && strcmp(buf, "00:00") == 0, "utc midnight");
+  expect(clock_format(0, 84, buf, sizeof buf) == 1 && strcmp(buf, "09:00") == 0, "tokyo is utc+9");
+  expect(clock_format(0, 0, buf, sizeof buf) == 1 && strcmp(buf, "12:00") == 0, "utc-12");
+  expect(clock_format(0, 104, buf, sizeof buf) == 1 && strcmp(buf, "14:00") == 0, "utc+14");
+  expect(clock_format(0, 71, buf, sizeof buf) == 1 && strcmp(buf, "05:45") == 0, "quarter hour");
+  expect(clock_format(23 * 3600, 84, buf, sizeof buf) == 1 && strcmp(buf, "08:00") == 0, "tokyo wraps the day");
+  expect(clock_format(0, 105, buf, sizeof buf) == 0, "offset past utc+14");
+  expect(clock_offset_q() == 48, "default offset is utc");
+  expect(mkdtemp(home) != NULL, "clock home");
+  if (strstr(home, "XXXXXX")) {
+    return;
+  }
+  clock_offset_load(home);
+  expect(clock_offset_q() == 48, "missing clock file is utc");
+  expect(clock_offset_set(84) == 0 && clock_offset_q() == 84, "save tokyo");
+  expect(snprintf(path, sizeof path, "%s/clock.txt", home) < (int)sizeof path, "clock path");
+  expect(read_all(path, got, sizeof got) > 0 && strcmp(got, "offset 84\n") == 0, "clock file");
+  clock_offset_load(home);
+  expect(clock_offset_q() == 84, "reload tokyo");
+  expect(clock_offset_set(105) != 0 && clock_offset_q() == 84, "reject utc past +14");
+  expect(clock_offset_set(-1) != 0 && clock_offset_q() == 84, "reject negative offset");
+  clock_offset_load(NULL);
+  expect(clock_offset_q() == 48, "cleared offset is utc");
+  unlink(path);
+  rmdir(home);
+}
+
 void test_fileserver(void) {
   test_mdns();
+  test_clock_offset();
   expect(fileserver_start("/", 0) == NULL, "refuse root");
   char missing[] = "/tmp/yomu-fs-no-such";
   expect(fileserver_start(missing, 0) == NULL, "refuse missing");
@@ -566,13 +600,14 @@ void test_fileserver(void) {
 
   url_of(url, sizeof url, port, "/");
   expect(call("GET", url, NULL, NULL, NULL, &status, &body) == 0, "page rc");
-  expect(status == 200 && body && strstr(body, "yomu"), "page has yomu");
+  expect(status == 200 && body && strstr(body, "yomu") && strstr(body, "タイムゾーン"), "page has yomu");
   free(body);
   body = NULL;
 
   url_of(url, sizeof url, port, "/api/status");
   expect(call("GET", url, NULL, NULL, NULL, &status, &body) == 0, "status rc");
-  expect(status == 200 && body && strstr(body, "\"version\":\"yomu\""), "status version");
+  expect(status == 200 && body && strstr(body, "\"version\":\"yomu\"") && strstr(body, "\"utcOffsetQ\":48"),
+         "status version");
   free(body);
   body = NULL;
 
@@ -954,6 +989,53 @@ void test_fileserver(void) {
   enc[255] = '\0';
   expect(snprintf(path, sizeof path, "%s/%s", dir, enc) < (int)sizeof path, "truncated path");
   expect(read_all(path, got, sizeof got) < 0, "overlong name was not truncated");
+
+  {
+    char home[] = "/tmp/yomu-tz-XXXXXX";
+    char clockf[512];
+    char got[64];
+    expect(mkdtemp(home) != NULL, "tz home");
+    if (!strstr(home, "XXXXXX")) {
+      clock_offset_load(home);
+      url_of(url, sizeof url, port, "/api/status");
+      expect(call("GET", url, NULL, NULL, NULL, &status, &body) == 0, "tz status rc");
+      expect(status == 200 && body && strstr(body, "\"utcOffsetQ\":48"), "status offset is utc");
+      free(body);
+      body = NULL;
+      url_of(url, sizeof url, port, "/api/timezone");
+      expect(call("POST", url, "application/x-www-form-urlencoded", NULL, "offsetQ=84", &status, &body) == 0, "tz rc");
+      expect(status == 200 && body && strcmp(body, "OK") == 0, "tz ok");
+      free(body);
+      body = NULL;
+      expect(clock_offset_q() == 84, "tz memory");
+      expect(snprintf(clockf, sizeof clockf, "%s/clock.txt", home) < (int)sizeof clockf, "tz path");
+      expect(read_all(clockf, got, sizeof got) > 0 && strcmp(got, "offset 84\n") == 0, "tz file");
+      url_of(url, sizeof url, port, "/api/status");
+      expect(call("GET", url, NULL, NULL, NULL, &status, &body) == 0, "tz status after rc");
+      expect(status == 200 && body && strstr(body, "\"utcOffsetQ\":84"), "status shows tokyo");
+      free(body);
+      body = NULL;
+      url_of(url, sizeof url, port, "/api/timezone");
+      expect(call("POST", url, "application/x-www-form-urlencoded", NULL, "name=no", &status, &body) == 0,
+             "tz missing rc");
+      expect(status == 400, "tz missing offset");
+      free(body);
+      body = NULL;
+      expect(call("POST", url, "application/x-www-form-urlencoded", NULL, "offsetQ=105", &status, &body) == 0,
+             "tz high rc");
+      expect(status == 400 && clock_offset_q() == 84, "tz rejects utc past +14");
+      free(body);
+      body = NULL;
+      expect(call("POST", url, "application/x-www-form-urlencoded", NULL, "offsetQ=84abc", &status, &body) == 0,
+             "tz junk rc");
+      expect(status == 400 && clock_offset_q() == 84, "tz rejects trailing junk");
+      free(body);
+      body = NULL;
+      clock_offset_load(NULL);
+      unlink(clockf);
+      rmdir(home);
+    }
+  }
 
   url_of(url, sizeof url, port, "/download");
   expect(call("GET", url, NULL, NULL, NULL, &status, &body) == 0, "missing path rc");

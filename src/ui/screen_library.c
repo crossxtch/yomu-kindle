@@ -2,12 +2,156 @@
 
 #include "screen.h"
 
+#include "clockpref.h"
 #include "draw.h"
 
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 
 static int library_count(const State *st) { return st->nbooks + LIB_BOOKS; }
+
+int library_clock_box(const Layout *layout, int width, const char *count, int *x, int *y, int *w, int *h) {
+  int scale;
+  int pad;
+  int title_w;
+  int count_w;
+  int clock_w;
+  int count_x;
+  int left;
+  int right;
+  int cx;
+  if (!layout || width < 1 || !count) {
+    return 0;
+  }
+  scale = layout->scale;
+  pad = layout->pad;
+  if (scale < 1) {
+    return 0;
+  }
+  title_w = draw_text_width(scale, "yomu");
+  count_w = draw_text_width(scale, count);
+  clock_w = draw_text_width(scale, "00:00");
+  count_x = width - pad - count_w;
+  if (count_x < pad) {
+    count_x = pad;
+  }
+  left = pad + title_w + pad;
+  right = count_x - pad;
+  if (clock_w < 1 || right - left < clock_w) {
+    return 0;
+  }
+  cx = (width - clock_w) / 2;
+  if (cx < left) {
+    cx = left;
+  }
+  if (cx + clock_w > right) {
+    cx = right - clock_w;
+  }
+  if (x) {
+    *x = cx;
+  }
+  if (y) {
+    *y = pad;
+  }
+  if (w) {
+    *w = clock_w;
+  }
+  if (h) {
+    *h = 8 * scale;
+  }
+  return 1;
+}
+
+static int clock_minute(char *buf, size_t n, int64_t *minute) {
+  time_t now;
+  now = time(NULL);
+  if (now == (time_t)-1 || !clock_format(now, clock_offset_q(), buf, n)) {
+    return 0;
+  }
+  if (minute) {
+    *minute = (int64_t)now / 60;
+  }
+  return 1;
+}
+
+static void draw_library_clock(State *st) {
+  char text[8];
+  char count[32];
+  int64_t minute = -1;
+  int x = 0;
+  int y = 0;
+  int w = 0;
+  int h = 0;
+  Layout layout;
+  AppHost *host = st->host;
+  snprintf(count, sizeof count, "%d", st->nbooks);
+  layout = layout_of(host->w, host->h);
+  if (!clock_minute(text, sizeof text, &minute) ||
+      !library_clock_box(&layout, host->w, count, &x, &y, &w, &h)) {
+    st->clock_min = -1;
+    return;
+  }
+  draw_fill(host->gray, host->w, host->h, host->w, x, y, w, h, 255);
+  draw_text(host->gray, host->w, host->h, host->w, x, y, layout.scale, text, 0);
+  st->clock_min = minute;
+  st->clock_q = clock_offset_q();
+}
+
+int library_clock_wait_ms(const State *st) {
+  struct timespec ts;
+  int ms;
+  if (!st || st->screen != SCR_LIB || st->clock_min < 0) {
+    return -1;
+  }
+  if (clock_gettime(CLOCK_REALTIME, &ts) != 0) {
+    return 60000;
+  }
+  ms = (int)(60000 - (ts.tv_sec % 60) * 1000 - ts.tv_nsec / 1000000L);
+  if (ms < 1) {
+    ms = 1;
+  }
+  if (ms > 60000) {
+    ms = 60000;
+  }
+  return ms;
+}
+
+int refresh_library_clock(State *st) {
+  char text[8];
+  char count[32];
+  int64_t minute = -1;
+  int q;
+  int x = 0;
+  int y = 0;
+  int w = 0;
+  int h = 0;
+  Layout layout;
+  AppHost *host;
+  if (!st || !st->host || st->screen != SCR_LIB || st->clock_min < 0) {
+    return 0;
+  }
+  host = st->host;
+  q = clock_offset_q();
+  if (!clock_minute(text, sizeof text, &minute) || (minute == st->clock_min && q == st->clock_q)) {
+    return 0;
+  }
+  snprintf(count, sizeof count, "%d", st->nbooks);
+  layout = layout_of(host->w, host->h);
+  if (!library_clock_box(&layout, host->w, count, &x, &y, &w, &h)) {
+    st->clock_min = -1;
+    return 0;
+  }
+  draw_fill(host->gray, host->w, host->h, host->w, x, y, w, h, 255);
+  draw_text(host->gray, host->w, host->h, host->w, x, y, layout.scale, text, 0);
+  st->clock_min = minute;
+  st->clock_q = q;
+  if (!host->present) {
+    return 0;
+  }
+  host->present(host, x, y, w, h, 0);
+  return 1;
+}
 
 static void refresh_books(State *st) {
   if (st->fs && fileserver_changed(st->fs)) {
@@ -44,6 +188,7 @@ void paint_library(State *st) {
   char right[32];
   snprintf(right, sizeof right, "%d", st->nbooks);
   paint_header(st, &layout, "yomu", right);
+  draw_library_clock(st);
   int total = library_count(st);
   Chrome chrome;
   fit_list(&layout, host->h, total, &st->lib_cursor, &st->lib_top, 0, &chrome);

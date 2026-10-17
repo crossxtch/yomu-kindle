@@ -2,6 +2,7 @@
 
 #include "screen.h"
 
+#include "clockpref.h"
 #include "draw.h"
 #include "font.h"
 #include "log.h"
@@ -144,6 +145,7 @@ int app_run(AppHost *host, const char *initial_path) {
   }
   yomu_font_open();
   type_load(host->home);
+  clock_offset_load(host->home);
   State *st = calloc(1, sizeof(*st));
   if (!st) {
     return 1;
@@ -193,7 +195,8 @@ int app_run(AppHost *host, const char *initial_path) {
     }
     AppEvent ev;
     memset(&ev, 0, sizeof ev);
-    host->poll_ms = (st->ts && !st->index_stall && !ts_done(st->ts)) ? 0 : -1;
+    /* Indexing steps immediately. The home clock waits until the next minute. */
+    host->poll_ms = (st->ts && !st->index_stall && !ts_done(st->ts)) ? 0 : library_clock_wait_ms(st);
     int polled = host->poll(host, &ev);
     if (polled < 0 || ev.kind == EV_QUIT) {
       break;
@@ -227,6 +230,9 @@ int app_run(AppHost *host, const char *initial_path) {
             }
           }
         }
+      }
+      if (st->screen == SCR_LIB) {
+        refresh_library_clock(st);
       }
       continue;
     }
