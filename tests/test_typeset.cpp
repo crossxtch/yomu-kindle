@@ -42,10 +42,168 @@ void testKinsoku() {
   check(ts::kinsokuHalfAdvance(0x3015), "〕 is half an em");
   check(ts::kinsokuInlineAdvance(0x300C, 20, false) == 10, "「 advances 10");
   check(ts::kinsokuInlineAdvance(0x300C, 20, true) == 20, "tcy ignores half advance");
+  check(ts::kinsokuBracketPairGap(0x300D, 0x300C, 20) == 10, "」「 keeps half an em");
+  check(ts::kinsokuBracketPairGap(0x300F, 0x300E, 20) == 10, "』『 keeps half an em");
+  check(ts::kinsokuBracketPairGap(0xFF09, 0xFF08, 20) == 10, "）（ keeps half an em");
+  check(ts::kinsokuBracketPairGap(0x300C, 0x300D, 20) == 0, "「」 stays packed");
+  check(ts::kinsokuBracketPairGap(0x3002, 0x300C, 20) == 0, "。「 stays packed");
+  check(ts::kinsokuBracketPairGap(0x300D, 0x3042, 20) == 0, "」あ stays packed");
   check(ts::usesEmAdvance(0x3042), "kana stays on the em");
   check(!ts::usesEmAdvance('A'), "latin uses the face advance");
   check(ts::kinsokuYakumono(0x3001), "、 is 約物");
   check(!ts::kinsokuYakumono(0x3042), "あ is not 約物");
+}
+
+void feedCp(ts::PageLayouter &lay, uint32_t cp, uint32_t pos) {
+  ts::Atom atom{};
+  atom.cp = cp;
+  lay.feed(atom, pos);
+}
+
+void testBracketPair() {
+  ts::PageLayouter lay;
+  ts::LayoutOptions opt;
+  opt.width = 80;
+  opt.height = 200;
+  opt.em = 20;
+  opt.margin = 0;
+  opt.mode = ts::WritingMode::VerticalRl;
+  lay.begin(opt);
+  const uint32_t seq[] = {0x3042, 0x300D, 0x300C, 0x3044};
+  for (int i = 0; i < 4; ++i) {
+    feedCp(lay, seq[i], static_cast<uint32_t>(i));
+  }
+  check(lay.finish(), "」「 page commits");
+  if (lay.pageGlyphCount() == 4) {
+    const ts::GlyphRun *p = lay.page();
+    check(p[1].advance == 10 && p[2].advance == 10, "」「 cells stay half an em");
+    check((p[1].flags & ts::kRunHalfCell) != 0 && (p[2].flags & ts::kRunHalfCell) != 0, "」「 stay half cells");
+    check(p[2].x == p[1].x && p[2].y == p[1].y + 20, "」「 keeps a half-em gap");
+    check(p[3].y == p[2].y + 10, "kana follows the opening bracket");
+  } else {
+    check(false, "あ」「い is four glyphs");
+  }
+
+  lay.begin(opt);
+  feedCp(lay, 0x3002, 0);
+  feedCp(lay, 0x300C, 1);
+  check(lay.finish() && lay.pageGlyphCount() == 2, "。「 page");
+  if (lay.pageGlyphCount() == 2) {
+    const ts::GlyphRun *p = lay.page();
+    check(p[1].y == p[0].y + p[0].advance, "。「 does not open a gap");
+  }
+
+  /* One em of column. The gap does not fit, so 「 starts the next column. */
+  opt.width = 70;
+  opt.height = 20;
+  lay.begin(opt);
+  feedCp(lay, 0x300D, 0);
+  feedCp(lay, 0x300C, 1);
+  check(lay.finish() && lay.pageGlyphCount() == 2, "tight 」「 page");
+  if (lay.pageGlyphCount() == 2) {
+    const ts::GlyphRun *p = lay.page();
+    check(p[0].x != p[1].x && p[1].y == p[0].y, "tight column splits 」「");
+  }
+
+  opt.width = 400;
+  opt.height = 80;
+  opt.mode = ts::WritingMode::HorizontalTb;
+  lay.begin(opt);
+  for (int i = 0; i < 4; ++i) {
+    feedCp(lay, seq[i], static_cast<uint32_t>(i));
+  }
+  check(lay.finish() && lay.pageGlyphCount() == 4, "horizontal 」「 page");
+  if (lay.pageGlyphCount() == 4) {
+    const ts::GlyphRun *p = lay.page();
+    check(p[2].x == p[1].x + 20 && p[3].x == p[2].x + 10, "horizontal 」「 keeps a half-em gap");
+    check(p[2].y == p[1].y, "horizontal 」「 stays on the line");
+  }
+
+  /* The half-em cells still slide. The gap has to show up in the ink, not
+   * only in the advances. Hiragino is the book face; Arial Unicode has vert. */
+  const char *paths[] = {
+      "/System/Library/Fonts/\xe3\x83\x92\xe3\x83\xa9\xe3\x82\xad\xe3\x82\x99\xe3\x83\x8e\xe6\x98\x8e\xe6\x9c\x9d ProN.ttc",
+      "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
+      "/Library/Fonts/Arial Unicode.ttf",
+      nullptr,
+  };
+  FtFont font;
+  const char *path = nullptr;
+  for (int i = 0; paths[i]; ++i) {
+    if (font.load(paths[i], -1)) {
+      path = paths[i];
+      break;
+    }
+  }
+  if (!path) {
+    std::fprintf(stderr, "skip bracket ink: %s\n", font.lastError());
+    return;
+  }
+  const int em = 48;
+  opt.width = 96;
+  opt.height = em * 6;
+  opt.em = static_cast<uint8_t>(em);
+  opt.margin = 0;
+  opt.mode = ts::WritingMode::VerticalRl;
+  lay.begin(opt);
+  const uint32_t phrase[] = {0x601D, 0x3046, 0x300D, 0x300C, 0x5BB6, 0x5EAD};
+  for (int i = 0; i < 6; ++i) {
+    feedCp(lay, phrase[i], static_cast<uint32_t>(i));
+  }
+  check(lay.finish(), "ink page commits");
+  const int pageW = opt.width;
+  const int pageH = opt.height;
+  uint8_t *page = new uint8_t[static_cast<size_t>(pageW) * static_cast<size_t>(pageH)];
+  std::memset(page, 255, static_cast<size_t>(pageW) * static_cast<size_t>(pageH));
+  const ts::GlyphRun *drawn = lay.page();
+  const uint16_t nDrawn = lay.pageGlyphCount();
+  int closeY = -1;
+  int openY = -1;
+  int colX = 0;
+  for (uint16_t i = 0; i < nDrawn; ++i) {
+    const int adv = drawn[i].advance ? drawn[i].advance : drawn[i].size;
+    const int face = drawn[i].size ? drawn[i].size : em;
+    font.drawGray(page, pageW, pageH, drawn[i].x, drawn[i].y, face, adv, drawn[i].cp, face, true, false);
+    if (drawn[i].cp == 0x300D) {
+      closeY = drawn[i].y;
+      colX = drawn[i].x;
+    }
+    if (drawn[i].cp == 0x300C) {
+      openY = drawn[i].y + adv;
+    }
+  }
+  int topInk = -1;
+  int botInk = -1;
+  int bestWhite = 0;
+  int white = 0;
+  if (closeY >= 0 && openY > closeY) {
+    for (int y = closeY; y < openY && y < pageH; ++y) {
+      bool ink = false;
+      for (int x = colX; x < colX + em && x < pageW; ++x) {
+        if (page[y * pageW + x] < 200) {
+          ink = true;
+          break;
+        }
+      }
+      if (ink) {
+        if (topInk < 0) {
+          topInk = y;
+        }
+        botInk = y;
+        white = 0;
+      } else if (topInk >= 0) {
+        white++;
+        if (white > bestWhite) {
+          bestWhite = white;
+        }
+      }
+    }
+  }
+  if (bestWhite < em / 2) {
+    std::fprintf(stderr, "FAIL typeset: 」「 ink gap=%d em=%d font=%s\n", bestWhite, em, path);
+    g_fails++;
+  }
+  delete[] page;
 }
 
 void testLayout() {
@@ -652,6 +810,7 @@ void testMarks() {
 extern "C" int test_typeset_rules(void) {
   g_fails = 0;
   testKinsoku();
+  testBracketPair();
   testLayout();
   testToc();
   testFace();
