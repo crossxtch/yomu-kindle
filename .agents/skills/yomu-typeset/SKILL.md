@@ -15,6 +15,7 @@ Atom files are IRAC, `kAtomMagic` `0x43415249` in `../typeset/src/AtomFile.h`. A
 KF8 plan files are MRP3, `MobiBook::kPlanMagic`. The PalmDOC text length is only the first FDST flow. Unpack through the last flow so later stylesheets are kept. An older plan rebuilds the atoms of that `.mobi`, `.azw3`, or `.azw`.
 yomu's `TypesetBook` is `../typeset/book/TypesetBook.h`. The X4 Classic class is `../yomu-mini/lib/Book/TypesetBook.h`.
 A book path is stored in 1024 bytes, the same size as the shelf path in `src/ui/screen.h`. `ZipArchive` keeps that copy so it can reopen the file. A longer path fails open with `path long`.
+`pageCount()` returns the pages indexed so far, clamped at 65535.
 A finished page index is TIDA, `TypesetBook::kIndexMagic` `0x41444954`. A partial index is TIDB, `kIndexPartial` `0x42444954`. An older index magic is rebuilt because the column length changed. The record size stays 7 bytes.
 `faceIndex` 0 keeps the path-only page-index hash. A positive index mixes `face ^= (uint32_t)faceIndex * 0x9E3779B9u`.
 
