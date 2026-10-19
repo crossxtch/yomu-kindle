@@ -33,6 +33,29 @@ uint32_t pickCp(FtFont& font, const uint32_t cp) {
   return 0;
 }
 
+void fillGray(uint8_t* gray, const int w, const int h, const int x, const int y, const int rw, const int rh,
+              const uint8_t ink) {
+  if (!gray || rw <= 0 || rh <= 0) {
+    return;
+  }
+  for (int row = 0; row < rh; ++row) {
+    const int dy = y + row;
+    if (dy < 0 || dy >= h) {
+      continue;
+    }
+    for (int col = 0; col < rw; ++col) {
+      const int dx = x + col;
+      if (dx < 0 || dx >= w) {
+        continue;
+      }
+      uint8_t* dst = gray + static_cast<size_t>(dy) * static_cast<size_t>(w) + static_cast<size_t>(dx);
+      if (ink < *dst) {
+        *dst = ink;
+      }
+    }
+  }
+}
+
 void inkBox(uint8_t* gray, const int w, const int h, const int x, const int y, const int rw, const int rh) {
   if (!gray || rw <= 0 || rh <= 0) {
     return;
@@ -171,6 +194,34 @@ void paintMark(uint8_t* gray, const int w, const int h, const uint8_t kind, cons
   }
 }
 
+void paintShades(uint8_t* gray, const int w, const int h, const ts::GlyphRun* runs, const uint16_t n,
+                 const int fallbackEm) {
+  for (uint16_t i = 0; i < n; ++i) {
+    const ts::GlyphRun& g = runs[i];
+    if (g.shade < 2 || ts::runPicture(g)) {
+      continue;
+    }
+    const bool vert = !ts::runRubyAbove(g);
+    const int em = g.size > 0 ? static_cast<int>(g.size) : fallbackEm;
+    const int adv = ts::runAdvance(g);
+    int x = g.x;
+    int y = g.y;
+    int rw = vert ? em : adv;
+    int rh = vert ? adv : em;
+    if (g.box != 0 && em > 0) {
+      int outset = em * 12 / 100;
+      if (outset < 1) {
+        outset = 1;
+      }
+      x -= outset;
+      y -= outset;
+      rw += outset * 2;
+      rh += outset * 2;
+    }
+    fillGray(gray, w, h, x, y, rw, rh, g.shade);
+  }
+}
+
 void paintBoxes(uint8_t* gray, const int w, const int h, const ts::GlyphRun* runs, const uint16_t n,
                 const int fallbackEm) {
   for (uint16_t i = 0; i < n; ++i) {
@@ -256,15 +307,19 @@ bool TypesetBook::renderGray(uint8_t* gray, const int w, const int h, const uint
   }
   memset(gray, 255, static_cast<size_t>(w) * static_cast<size_t>(h));
   if (loadedPicture != 0) {
+    const unsigned long tPic = millis();
     if (!ts::picturePaintInset(picturePath, loadedPicture, gray, w, h, layoutOpt.margin)) {
       LOG_INF("TS", "picture %u blank", static_cast<unsigned>(loadedPicture));
     }
+    LOG_INF("TS", "time picture %u %lums page=%lu", static_cast<unsigned>(loadedPicture), millis() - tPic,
+            static_cast<unsigned long>(globalPage + 1));
     extendAhead(globalPage, 2);
     return true;
   }
 
   const int em = font.emPx();
   const int rubyEm = font.rubyEmPx();
+  paintShades(gray, w, h, loadedGlyphs, loadedCount, em);
   for (uint16_t i = 0; i < loadedCount; ++i) {
     const ts::GlyphRun& g = loadedGlyphs[i];
     if (ts::runPicture(g)) {

@@ -11,7 +11,8 @@ Follow the struct, rebuild, and face-list rules in `AGENTS.md`.
 
 ## Cache magics
 
-Atom files are IRAB, `kAtomMagic` `0x42415249` in `../typeset/src/AtomFile.h`. A mismatch rebuilds the file. Character, group, and 縦中横 records store a 囲み罫 id after `startEm`. 0 is none. The page index does not store the id.
+Atom files are IRAC, `kAtomMagic` `0x43415249` in `../typeset/src/AtomFile.h`. A mismatch rebuilds the file. Character, group, and 縦中横 records store a 囲み罫 id after `startEm`, then a background gray. 0 is none. Gray 0 is no fill. A value of 2 or more is the 8-bit gray, and black is stored as 2. The page index does not store either.
+KF8 plan files are MRP3, `MobiBook::kPlanMagic`. The PalmDOC text length is only the first FDST flow. Unpack through the last flow so later stylesheets are kept. An older plan rebuilds the atoms of that `.mobi`, `.azw3`, or `.azw`.
 yomu's `TypesetBook` is `../typeset/book/TypesetBook.h`. The X4 Classic class is `../yomu-mini/lib/Book/TypesetBook.h`.
 A finished page index is TIDA, `TypesetBook::kIndexMagic` `0x41444954`. A partial index is TIDB, `kIndexPartial` `0x42444954`. An older index magic is rebuilt because the column length changed. The record size stays 7 bytes.
 `faceIndex` 0 keeps the path-only page-index hash. A positive index mixes `face ^= (uint32_t)faceIndex * 0x9E3779B9u`.

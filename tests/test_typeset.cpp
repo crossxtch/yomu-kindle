@@ -668,9 +668,11 @@ void testBoxPad() {
   ts::Atom a{};
   a.cp = 0x3042;
   a.box = 1;
+  a.shade = 220;
   lay.feed(a, 0);
   a.cp = 0x3044;
   a.box = 1;
+  a.shade = 0;
   lay.feed(a, 1);
   a.cp = 0x3046;
   a.box = 0;
@@ -684,6 +686,7 @@ void testBoxPad() {
     check(p[1].y == p[0].y + 20, "a continued box does not pad");
     check(p[2].y >= p[1].y + 24, "leaving a box pads about 0.22em");
     check(p[2].emphasis == ts::kEmDot, "a dot mark reaches the run");
+    check(p[0].shade == 220 && p[1].shade == 0, "background gray stays on its run");
   }
 }
 
@@ -805,6 +808,42 @@ void testMarks() {
         "id and a name become anchors");
 }
 
+void testSwatch() {
+  const char *html =
+      "<html><head><style>"
+      ".bg-gainsboro { background-color: #dcdcdc; }"
+      ".k-solid { border-style: solid solid solid solid; border-width: 1px; border-color: #000000; }"
+      "</style></head><body><p>"
+      "\u4E8B\u67C4\u306E\u90E8\u5206\u3092<span class=\"bg-gainsboro k-solid\">\u3000</span>\u3001"
+      "\u6C17\u6301\u3061\u3084\u614B\u5EA6\u306E\u90E8\u5206\u3092<span class=\"k-solid\">\u3000</span>\u3067"
+      "<span class=\"bg-gainsboro\">\u3055</span>"
+      "</p></body></html>";
+  AtomBag bag;
+  ts::FaceRule rules[8]{};
+  uint8_t nRules = 0;
+  ts::scanStyleTags(html, std::strlen(html), rules, nRules);
+  ts::AtomSink sink{&bag, takeAtom, nullptr, rules, nRules, takeAnchor};
+  check(ts::htmlToAtoms(html, std::strlen(html), sink), "swatch html");
+  const ts::Atom *marks[2]{};
+  int nMarks = 0;
+  const ts::Atom *sa = nullptr;
+  for (int i = 0; i < bag.n; ++i) {
+    if (bag.atoms[i].kind != ts::AtomKind::Ch) {
+      continue;
+    }
+    if (bag.atoms[i].cp == 0x3000 && nMarks < 2) {
+      marks[nMarks++] = &bag.atoms[i];
+    }
+    if (bag.atoms[i].cp == 0x3055) {
+      sa = &bag.atoms[i];
+    }
+  }
+  check(nMarks == 2 && marks[0]->box != 0 && marks[1]->box != 0 && marks[0]->box != marks[1]->box,
+        "each swatch is its own box");
+  check(nMarks == 2 && marks[0]->shade == 220 && marks[1]->shade == 0, "only the gainsboro swatch is gray");
+  check(sa && sa->shade == 220 && sa->box == 0, "a gray highlight has no box");
+}
+
 }  // namespace
 
 extern "C" int test_typeset_rules(void) {
@@ -820,5 +859,6 @@ extern "C" int test_typeset_rules(void) {
   testBoxPad();
   testAozora();
   testMarks();
+  testSwatch();
   return g_fails;
 }
