@@ -27,6 +27,11 @@ TS_CXXFLAGS ?= -std=gnu++17 -O2 -Wall -Wextra -Wno-unused-parameter -Wno-unused-
 	$(SRC_INCLUDES)
 FT_CFLAGS ?= -std=gnu11 -O2 -w -DFT2_BUILD_LIBRARY -D_FILE_OFFSET_BITS=64 \
 	-Ithird_party/freetype/include
+DEPFLAGS := -MMD -MP
+CFLAGS += $(DEPFLAGS)
+PUFF_CFLAGS += $(DEPFLAGS)
+TS_CXXFLAGS += $(DEPFLAGS)
+FT_CFLAGS += $(DEPFLAGS)
 ZIG ?= zig
 KINDLE_TARGET ?= arm-linux-musleabihf
 
@@ -223,3 +228,7 @@ package: kindle
 
 clean:
 	rm -rf $(BUILD)
+
+-include $(HOST_OBJS:.o=.d)
+-include $(HOST)/test_app.d $(HOST)/test_fileserver.d $(HOST)/test_typeset.d
+-include $(KINDLE_OBJS:.o=.d)

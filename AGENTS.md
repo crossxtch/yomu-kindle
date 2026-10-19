@@ -15,7 +15,7 @@ Sleep works only while the Kindle framework is running. Launch from the KUAL ent
 ## Source
 
 Append a new field at the end of a struct. On `TypesetBook`, `faceIndex` stays after `hookCtx`.
-The Makefile does not track header dependencies. After a header change or a C++ signature change, rebuild every translation unit: `rm -rf build/host && make test`. The Kindle binary is `rm -rf build/kindle && make kindle`. Host objects are compiled with `cc -Wall -Wextra -Werror`.
+The Makefile records header dependencies for the host and Kindle builds. After a C++ signature change, rebuild every translation unit: `rm -rf build/host && make test`. The Kindle binary is `rm -rf build/kindle && make kindle`. Host objects are compiled with `cc -Wall -Wextra -Werror`.
 A new parameter changes the C++ mangled name. A default argument does not keep the old symbol. Recompile every caller.
 
 The shared parser and layouter are `../typeset/src`. The Kindle book driver and stb picture page are `../typeset/book`. `src/paint` keeps `FtFont`, `TypesetBookGray`, `HalPosix`, and `compat/Logging.h`.
