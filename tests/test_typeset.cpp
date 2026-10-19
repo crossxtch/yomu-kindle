@@ -1,8 +1,11 @@
+#include "Epub.h"
 #include "HtmlIR.h"
 #include "Kinsoku.h"
 #include "Layout.h"
 #include "PicturePage.h"
 #include "TextIr.h"
+#include "TypesetBook.h"
+#include "Zip.h"
 
 #include "FtFont.h"
 
@@ -10,7 +13,10 @@
 
 #include <cstdio>
 #include <cstring>
+#include <string>
+#include <sys/stat.h>
 #include <unistd.h>
+#include <vector>
 
 namespace {
 
@@ -844,6 +850,152 @@ void testSwatch() {
   check(sa && sa->shade == 220 && sa->box == 0, "a gray highlight has no box");
 }
 
+void put16le(std::vector<unsigned char> &b, uint16_t v) {
+  b.push_back(static_cast<unsigned char>(v));
+  b.push_back(static_cast<unsigned char>(v >> 8));
+}
+
+void put32le(std::vector<unsigned char> &b, uint32_t v) {
+  b.push_back(static_cast<unsigned char>(v));
+  b.push_back(static_cast<unsigned char>(v >> 8));
+  b.push_back(static_cast<unsigned char>(v >> 16));
+  b.push_back(static_cast<unsigned char>(v >> 24));
+}
+
+struct ZipPart {
+  const char *name;
+  const std::string *bytes;
+};
+
+bool writeStoredZip(const char *path, const ZipPart *parts, int n) {
+  std::vector<unsigned char> out;
+  std::vector<uint32_t> local;
+  for (int i = 0; i < n; ++i) {
+    local.push_back(static_cast<uint32_t>(out.size()));
+    const uint16_t nameN = static_cast<uint16_t>(std::strlen(parts[i].name));
+    const uint32_t len = static_cast<uint32_t>(parts[i].bytes->size());
+    put32le(out, 0x04034b50);
+    put16le(out, 20);
+    put16le(out, 0);
+    put16le(out, 0);
+    put16le(out, 0);
+    put16le(out, 0);
+    put32le(out, 0);
+    put32le(out, len);
+    put32le(out, len);
+    put16le(out, nameN);
+    put16le(out, 0);
+    out.insert(out.end(), parts[i].name, parts[i].name + nameN);
+    out.insert(out.end(), parts[i].bytes->begin(), parts[i].bytes->end());
+  }
+  const uint32_t cd = static_cast<uint32_t>(out.size());
+  for (int i = 0; i < n; ++i) {
+    const uint16_t nameN = static_cast<uint16_t>(std::strlen(parts[i].name));
+    const uint32_t len = static_cast<uint32_t>(parts[i].bytes->size());
+    put32le(out, 0x02014b50);
+    put16le(out, 20);
+    put16le(out, 20);
+    put16le(out, 0);
+    put16le(out, 0);
+    put16le(out, 0);
+    put16le(out, 0);
+    put32le(out, 0);
+    put32le(out, len);
+    put32le(out, len);
+    put16le(out, nameN);
+    put16le(out, 0);
+    put16le(out, 0);
+    put16le(out, 0);
+    put16le(out, 0);
+    put32le(out, 0);
+    put32le(out, local[static_cast<size_t>(i)]);
+    out.insert(out.end(), parts[i].name, parts[i].name + nameN);
+  }
+  const uint32_t cdN = static_cast<uint32_t>(out.size()) - cd;
+  put32le(out, 0x06054b50);
+  put16le(out, 0);
+  put16le(out, 0);
+  put16le(out, static_cast<uint16_t>(n));
+  put16le(out, static_cast<uint16_t>(n));
+  put32le(out, cdN);
+  put32le(out, cd);
+  put16le(out, 0);
+  return writeBytes(path, out.data(), out.size());
+}
+
+void testLongPath() {
+  char dir[] = "/tmp/yomu-long-XXXXXX";
+  if (!mkdtemp(dir)) {
+    check(false, "long path dir");
+    return;
+  }
+  ts_hal_set_root(dir);
+  std::string nest = dir;
+  nest.push_back('/');
+  nest.append(200, 'n');
+  check(mkdir(nest.c_str(), 0755) == 0, "long path nest");
+  std::string path = nest;
+  path.push_back('/');
+  path.append(80, 'm');
+  path += ".epub";
+  check(path.size() > 255 && path.size() < 1024, "fixture path sits between 256 and 1024");
+
+  const std::string container =
+      "<?xml version=\"1.0\"?><container version=\"1.0\"><rootfiles>"
+      "<rootfile full-path=\"OEBPS/content.opf\" media-type=\"application/oebps-package+xml\"/>"
+      "</rootfiles></container>";
+  const std::string chapter =
+      "<?xml version=\"1.0\"?><html><body><p>"
+      "\u3042\u3044\u3046\u3048\u304A\u304B\u304D\u304F\u3051\u3053\u3055\u3057\u3059\u305B\u305D"
+      "\u305F\u3061\u3064\u3066\u3068\u306A\u306B\u306C\u306D\u306E\u306F\u3072\u3075\u3078\u307B"
+      "</p></body></html>";
+  const std::string opf =
+      "<?xml version=\"1.0\"?><package version=\"3.0\"><metadata></metadata><manifest>"
+      "<item id=\"c\" href=\"c.xhtml\" media-type=\"application/xhtml+xml\"/>"
+      "</manifest><spine><itemref idref=\"c\"/></spine></package>";
+  const ZipPart parts[] = {{"META-INF/container.xml", &container},
+                           {"OEBPS/content.opf", &opf},
+                           {"OEBPS/c.xhtml", &chapter}};
+  check(writeStoredZip(path.c_str(), parts, 3), "write long-path epub");
+
+  ts::ZipArchive zip;
+  const bool zipOk = zip.open(path.c_str());
+  check(zipOk && zip.count() == 3, zip.lastError()[0] ? zip.lastError() : "zip a path past 255 bytes");
+  zip.close();
+
+  ts::EpubBook epub;
+  const bool epubOk = epub.open(path.c_str(), "/.yomu/long.atom");
+  check(epubOk, epub.lastError()[0] ? epub.lastError() : "epub a path past 255 bytes");
+
+  const char *font = nullptr;
+  const char *cands[] = {"/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
+                         "/Library/Fonts/Arial Unicode.ttf"};
+  for (const char *cand : cands) {
+    if (access(cand, R_OK) == 0) {
+      font = cand;
+      break;
+    }
+  }
+  check(font != nullptr, "font for a long path");
+  if (!font) {
+    return;
+  }
+  TypesetBook book;
+  const bool opened = book.open(path.c_str(), nullptr, nullptr, font);
+  check(opened, book.lastError()[0] ? book.lastError() : "open a path past 255 bytes");
+  check(opened && std::strcmp(book.path(), path.c_str()) == 0, "the stored path keeps its extension");
+  book.close();
+
+  std::string huge(1100, 'm');
+  huge += ".epub";
+  TypesetBook over;
+  check(!over.open(huge.c_str(), nullptr, nullptr, font) && std::strcmp(over.lastError(), "path long") == 0,
+        "a path past 1024 bytes is path long");
+  ts::ZipArchive zipOver;
+  check(!zipOver.open(huge.c_str()) && std::strcmp(zipOver.lastError(), "path long") == 0,
+        "a zip path past 1024 bytes is path long");
+}
+
 }  // namespace
 
 extern "C" int test_typeset_rules(void) {
@@ -860,5 +1012,6 @@ extern "C" int test_typeset_rules(void) {
   testAozora();
   testMarks();
   testSwatch();
+  testLongPath();
   return g_fails;
 }
