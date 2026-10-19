@@ -25,4 +25,9 @@ The body face list has no gothic row, no Code2000 row, and no `標準` face row.
 
 ## Git
 
-A commit subject is one short imperative sentence ending with a period. The body is empty. Commit only when asked.
+A commit subject is one short imperative sentence ending with a period. The body is empty.
+Commit only when asked. Do not push unless asked. One commit is one change.
+
+## Skills
+
+`.agents/skills/` has `yomu-kindle`, `yomu-typeset`, and `commit`. `.claude/skills` links to those directories.

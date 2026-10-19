@@ -33,7 +33,7 @@ Rules live in `../typeset/src/FaceCss.cpp`. A selector is an element, a class, o
 Read at most `kMaxCssLinks` (4) linked sheets, each at most `kMaxCssBytes` (65536). Skip a `<style>` block larger than that.
 `weight` 0 inherits, 1 is normal, and 2 is bold. `b` and `strong` are bold unless a rule says normal. An inline style wins.
 `pct` 0 inherits. Otherwise it is a percent of the parent, or of the body when `root` is set (`rem`). The parser clamps a declared percent to 40–250. The computed percent stored on the atom is 0 at 100, otherwise 40–200.
-A four-side `border` or `border-style` starts a 囲み罫 (`box` 2). One side (`border-bottom`, `border-right`, and the style forms) is 傍線, `kEmLine`. Calibre writes underlines that way. `box` 1 is an explicit none.
+A four-side `border` or `border-style` is paint `box` 2 and starts a 囲み罫. One side (`border-bottom`, `border-right`, and the style forms) is 傍線, `kEmLine`. Calibre writes underlines that way. Paint `box` 1 is explicit none and does not start a rule. The atom stores the 囲み罫 id from the cache section, not this paint value.
 The contents list prefers the EPUB nav document, then the NCX. The fragment after `#` is kept.
 
 ## Collections
