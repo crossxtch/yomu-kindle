@@ -132,18 +132,46 @@ void inkTri(uint8_t* gray, const int w, const int h, const int cx, const int cy,
 }
 
 void inkFrame(uint8_t* gray, const int w, const int h, const int x, const int y, const int rw, const int rh,
-              const int thick) {
+              const int thick, const int sides) {
   if (rw <= 0 || rh <= 0 || thick <= 0) {
     return;
   }
-  if (thick * 2 >= rw || thick * 2 >= rh) {
+  const bool full = sides == 0 || (sides & 0x0F) == 0x0F;
+  if (full && (thick * 2 >= rw || thick * 2 >= rh)) {
     inkBox(gray, w, h, x, y, rw, rh);
     return;
   }
-  inkBox(gray, w, h, x, y, rw, thick);
-  inkBox(gray, w, h, x, y + rh - thick, rw, thick);
-  inkBox(gray, w, h, x, y, thick, rh);
-  inkBox(gray, w, h, x + rw - thick, y, thick, rh);
+  if (full || (sides & ts::kBorderTop) != 0) {
+    inkBox(gray, w, h, x, y, rw, thick);
+  }
+  if (full || (sides & ts::kBorderBottom) != 0) {
+    inkBox(gray, w, h, x, y + rh - thick, rw, thick);
+  }
+  if (full || (sides & ts::kBorderLeft) != 0) {
+    inkBox(gray, w, h, x, y, thick, rh);
+  }
+  if (full || (sides & ts::kBorderRight) != 0) {
+    inkBox(gray, w, h, x + rw - thick, y, thick, rh);
+  }
+}
+
+// CSS px wins. An em or rem width is a percent of this glyph, or of the body em when ruleRoot is set.
+int cssThick(const ts::GlyphRun& g, const int bodyEm) {
+  if (g.rulePx > 0) {
+    return g.rulePx;
+  }
+  if (g.ruleEm == 0) {
+    return 0;
+  }
+  int ref = g.ruleRoot ? bodyEm : static_cast<int>(g.size);
+  if (ref < 1) {
+    ref = bodyEm > 0 ? bodyEm : 1;
+  }
+  int thick = ref * static_cast<int>(g.ruleEm) / 100;
+  if (thick < 1) {
+    thick = 1;
+  }
+  return thick;
 }
 
 int markRad(const int em, const int num, const int den) {
@@ -283,11 +311,28 @@ void paintBoxes(uint8_t* gray, const int w, const int h, const ts::GlyphRun* run
     if (outset < 1) {
       outset = 1;
     }
-    int thick = em * 6 / 100;
+    int thick = cssThick(g, fallbackEm);
+    int sides = g.ruleSides;
+    for (uint16_t j = static_cast<uint16_t>(i + 1); j < n && (thick == 0 || sides == 0); ++j) {
+      const ts::GlyphRun& o = runs[j];
+      if (o.box != g.box || ts::runPicture(o)) {
+        continue;
+      }
+      if (thick == 0) {
+        thick = cssThick(o, fallbackEm);
+      }
+      if (sides == 0 && o.ruleSides != 0) {
+        sides = o.ruleSides;
+      }
+    }
+    if (thick < 1) {
+      thick = em * 6 / 100;
+    }
     if (thick < 1) {
       thick = 1;
     }
-    inkFrame(gray, w, h, minX - outset, minY - outset, (maxX - minX) + outset * 2, (maxY - minY) + outset * 2, thick);
+    inkFrame(gray, w, h, minX - outset, minY - outset, (maxX - minX) + outset * 2, (maxY - minY) + outset * 2, thick,
+             sides);
   }
 }
 
@@ -380,7 +425,10 @@ bool TypesetBook::renderGray(uint8_t* gray, const int w, const int h, const uint
         gap = 1;
       }
       if (g.emphasis == ts::kEmLine) {
-        int thick = em / 14;
+        int thick = cssThick(g, em);
+        if (thick < 1) {
+          thick = em / 14;
+        }
         if (thick < 1) {
           thick = 1;
         }

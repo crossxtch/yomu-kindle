@@ -1,7 +1,9 @@
+#include "AtomFile.h"
 #include "Epub.h"
 #include "HtmlIR.h"
 #include "Kinsoku.h"
 #include "Layout.h"
+#include "Mobi.h"
 #include "PicturePage.h"
 #include "TextIr.h"
 #include "TypesetBook.h"
@@ -794,7 +796,7 @@ void testMarks() {
       "</body></html>";
   AtomBag bag;
   ts::FaceRule rules[8]{};
-  uint8_t nRules = 0;
+  uint16_t nRules = 0;
   ts::scanStyleTags(html, std::strlen(html), rules, nRules);
   ts::AtomSink sink{&bag, takeAtom, nullptr, rules, nRules, takeAnchor};
   check(ts::htmlToAtoms(html, std::strlen(html), sink), "marks html");
@@ -804,11 +806,11 @@ void testMarks() {
   const ts::Atom *em = findCp(bag, 0x5F37);
   const ts::Atom *mark = findCp(bag, 0x70B9);
   const ts::Atom *side = findCp(bag, 0x4E0B);
-  check(box && box2 && box->box != 0 && box->box == box2->box, "one border shares a box id");
+  check(box && box2 && box->box != 0 && box->box == box2->box && box->rulePx == 1, "one border shares a box id");
   check(plain && plain->box == 0, "text outside the border is unboxed");
   check(em && (em->emphasis & ts::kEmphasisMask) == ts::kEmSesame, "bare em stays sesame");
   check(mark && (mark->emphasis & ts::kEmphasisMask) == ts::kEmSesameOpen, "css open sesame");
-  check(side && side->box == 0 && (side->emphasis & ts::kEmphasisMask) == ts::kEmLine,
+  check(side && side->box == 0 && side->rulePx == 1 && (side->emphasis & ts::kEmphasisMask) == ts::kEmLine,
         "one-sided border is a side line");
   check(bag.nId == 2 && std::strcmp(bag.ids[0], "here") == 0 && std::strcmp(bag.ids[1], "sec") == 0,
         "id and a name become anchors");
@@ -826,7 +828,7 @@ void testSwatch() {
       "</p></body></html>";
   AtomBag bag;
   ts::FaceRule rules[8]{};
-  uint8_t nRules = 0;
+  uint16_t nRules = 0;
   ts::scanStyleTags(html, std::strlen(html), rules, nRules);
   ts::AtomSink sink{&bag, takeAtom, nullptr, rules, nRules, takeAnchor};
   check(ts::htmlToAtoms(html, std::strlen(html), sink), "swatch html");
@@ -847,7 +849,172 @@ void testSwatch() {
   check(nMarks == 2 && marks[0]->box != 0 && marks[1]->box != 0 && marks[0]->box != marks[1]->box,
         "each swatch is its own box");
   check(nMarks == 2 && marks[0]->shade == 220 && marks[1]->shade == 0, "only the gainsboro swatch is gray");
-  check(sa && sa->shade == 220 && sa->box == 0, "a gray highlight has no box");
+  check(nMarks == 2 && marks[0]->rulePx == 1 && marks[1]->rulePx == 1, "a 1px box keeps that width");
+  check(sa && sa->shade == 220 && sa->box == 0 && sa->rulePx == 0, "a gray highlight has no box");
+}
+
+bool markOf(const AtomBag &bag, uint32_t cp, uint8_t &emph, uint8_t &box, uint8_t &px) {
+  const ts::Atom *a = findCp(bag, cp);
+  if (!a) {
+    return false;
+  }
+  emph = static_cast<uint8_t>(a->emphasis & ts::kEmphasisMask);
+  box = a->box;
+  px = a->rulePx;
+  return true;
+}
+
+void testOneSide() {
+  const char *html =
+      "<html><head><style>"
+      ".top{border-style:solid none none none;border-width:2px}"
+      ".right{border-style:none solid none none;border-width:1px}"
+      ".pair{border-style:solid none}"
+      ".tri{border-style:solid solid none}"
+      ".box{border-style:solid solid solid solid;border-width:1px}"
+      ".short{border:1px solid black}"
+      ".line{border-bottom:1px dotted}"
+      ".gone{border-style:none}"
+      ".emw{border-bottom:0.1em dotted}"
+      ".rem{border-left:0.25rem solid}"
+      ".wide,.pairw{border-width:2px}"
+      ".wide{border-style:solid none none none}"
+      ".pairw{border-style:solid none solid none}"
+      "</style></head><body>"
+      "<span class=\"top\">\u4E0A</span><span class=\"right\">\u53F3</span>"
+      "<span class=\"pair\">\u4E8C</span><span class=\"tri\">\u4E09</span>"
+      "<span class=\"box\">\u56F2</span><span class=\"short\">\u67A0</span>"
+      "<span class=\"line\">\u4E0B</span><span class=\"gone\">\u7121</span>"
+      "<span class=\"emw\">\u5E45</span><span class=\"rem\">\u6839</span>"
+      "<span class=\"wide\">\u7DDA</span><span class=\"pairw\">\u5BFE</span>"
+      "</body></html>";
+  AtomBag bag;
+  ts::FaceRule rules[24]{};
+  uint16_t nRules = 0;
+  ts::scanStyleTags(html, std::strlen(html), rules, nRules);
+  ts::AtomSink sink{&bag, takeAtom, nullptr, rules, nRules, nullptr};
+  check(ts::htmlToAtoms(html, std::strlen(html), sink), "one-side html");
+  uint8_t emph = 0;
+  uint8_t box = 0;
+  uint8_t px = 0;
+  const ts::Atom *top = findCp(bag, 0x4E0A);
+  check(markOf(bag, 0x4E0A, emph, box, px) && emph == ts::kEmLine && box == 0 && px == 2 && top && top->ruleSides == 0,
+        "solid none none none is a 2px side line");
+  check(markOf(bag, 0x53F3, emph, box, px) && emph == ts::kEmLine && box == 0 && px == 1,
+        "none solid none none is a side line");
+  const ts::Atom *pair = findCp(bag, 0x4E8C);
+  check(pair && (pair->emphasis & ts::kEmphasisMask) == 0 && pair->box != 0 && pair->rulePx == 0 &&
+            pair->ruleSides == (ts::kBorderTop | ts::kBorderBottom),
+        "two visible sides are the top and bottom of a box");
+  const ts::Atom *tri = findCp(bag, 0x4E09);
+  check(tri && (tri->emphasis & ts::kEmphasisMask) == 0 && tri->box != 0 && tri->rulePx == 0 &&
+            tri->ruleSides == (ts::kBorderTop | ts::kBorderRight | ts::kBorderLeft),
+        "three visible sides leave the bottom open");
+  const ts::Atom *full = findCp(bag, 0x56F2);
+  check(markOf(bag, 0x56F2, emph, box, px) && box != 0 && px == 1 && full && full->ruleSides == 0,
+        "four solid sides are a 1px box");
+  const ts::Atom *shorthand = findCp(bag, 0x67A0);
+  check(markOf(bag, 0x67A0, emph, box, px) && box != 0 && px == 1 && shorthand && shorthand->ruleSides == 0,
+        "border shorthand is a 1px box");
+  check(markOf(bag, 0x4E0B, emph, box, px) && emph == ts::kEmLine && box == 0 && px == 1,
+        "border-bottom stays a side line");
+  check(markOf(bag, 0x7121, emph, box, px) && emph == 0 && box == 0, "border none starts no rule");
+  const ts::Atom *emw = findCp(bag, 0x5E45);
+  check(emw && (emw->emphasis & ts::kEmphasisMask) == ts::kEmLine && emw->box == 0 && emw->rulePx == 0 &&
+            emw->ruleEm == 10 && emw->ruleRoot == 0,
+        "0.1em is ten percent of this em");
+  const ts::Atom *remw = findCp(bag, 0x6839);
+  check(remw && (remw->emphasis & ts::kEmphasisMask) == ts::kEmLine && remw->box == 0 && remw->rulePx == 0 &&
+            remw->ruleEm == 25 && remw->ruleRoot == 1,
+        "0.25rem is twenty-five percent of the body em");
+  const ts::Atom *wide = findCp(bag, 0x7DDA);
+  check(wide && (wide->emphasis & ts::kEmphasisMask) == ts::kEmLine && wide->box == 0 && wide->rulePx == 2,
+        "a width rule merges onto a one-side style");
+  const ts::Atom *pairw = findCp(bag, 0x5BFE);
+  check(pairw && (pairw->emphasis & ts::kEmphasisMask) == 0 && pairw->box != 0 && pairw->rulePx == 2 &&
+            pairw->ruleSides == (ts::kBorderTop | ts::kBorderBottom),
+        "a width rule merges onto a two-side style");
+}
+
+struct PlateGrab {
+  uint32_t cp = 0;
+  int nPic = 0;
+};
+
+bool takePlate(void *ctx, const ts::Atom &atom, uint32_t) {
+  auto *g = static_cast<PlateGrab *>(ctx);
+  if (atom.kind == ts::AtomKind::Picture) {
+    g->cp = atom.cp;
+    g->nPic++;
+  }
+  return true;
+}
+
+void testForcePlate() {
+  const char *html = "<html><body><img src=\"a.jpg\"/></body></html>";
+  PlateGrab g;
+  ts::AtomSink sink;
+  sink.ctx = &g;
+  sink.emit = takePlate;
+  sink.picture = [](void *, const char *) -> uint16_t { return 3; };
+  sink.imageLongSide = [](void *, const char *) -> int { return 200; };
+  sink.forcePlate = true;
+  check(ts::htmlToAtoms(html, std::strlen(html), sink), "force plate html");
+  check(g.nPic == 1 && g.cp == (3u | ts::kPictureForcePage), "a pre-paginated image is its own page");
+  g = PlateGrab{};
+  sink.ctx = &g;
+  sink.forcePlate = false;
+  check(ts::htmlToAtoms(html, std::strlen(html), sink), "column plate html");
+  check(g.nPic == 1 && g.cp == 3, "the same image stays unmarked until layout");
+}
+
+void testLargeStyle() {
+  std::string html = "<html><head><style>";
+  html.append(70000, ' ');
+  html += ".late{border-style:solid none none none;border-width:2px}</style></head><body>"
+          "<span class=\"late\">\u3042</span></body></html>";
+  AtomBag bag;
+  ts::FaceRule rules[4]{};
+  uint16_t nRules = 0;
+  ts::scanStyleTags(html.data(), html.size(), rules, nRules);
+  ts::AtomSink sink{&bag, takeAtom, nullptr, rules, nRules, nullptr};
+  check(ts::htmlToAtoms(html.data(), html.size(), sink), "large style html");
+  const ts::Atom *a = findCp(bag, 0x3042);
+  check(a && a->box == 0 && a->rulePx == 2 && (a->emphasis & ts::kEmphasisMask) == ts::kEmLine,
+        "a class past 64KB is a 2px side line");
+}
+
+void testRuleOnRun() {
+  ts::PageLayouter lay;
+  ts::LayoutOptions opt;
+  opt.width = 200;
+  opt.height = 80;
+  opt.em = 20;
+  opt.margin = 0;
+  opt.mode = ts::WritingMode::HorizontalTb;
+  lay.begin(opt);
+  ts::Atom atom{};
+  atom.cp = 0x3042;
+  atom.emphasis = ts::kEmLine;
+  atom.rulePx = 2;
+  atom.ruleEm = 10;
+  atom.ruleRoot = 1;
+  atom.ruleSides = ts::kBorderTop | ts::kBorderBottom;
+  lay.feed(atom, 0);
+  check(lay.finish() && lay.pageGlyphCount() == 1, "rule width page");
+  if (lay.pageGlyphCount() == 1) {
+    const ts::GlyphRun &g = lay.page()[0];
+    check(g.rulePx == 2 && g.ruleEm == 10 && g.ruleRoot == 1 && g.ruleSides == (ts::kBorderTop | ts::kBorderBottom) &&
+              (g.emphasis & ts::kEmphasisMask) == ts::kEmLine,
+          "the run keeps the css width");
+  }
+}
+
+void put32be(std::vector<unsigned char> &b, uint32_t v) {
+  b.push_back(static_cast<unsigned char>(v >> 24));
+  b.push_back(static_cast<unsigned char>(v >> 16));
+  b.push_back(static_cast<unsigned char>(v >> 8));
+  b.push_back(static_cast<unsigned char>(v));
 }
 
 void put16le(std::vector<unsigned char> &b, uint16_t v) {
@@ -860,6 +1027,85 @@ void put32le(std::vector<unsigned char> &b, uint32_t v) {
   b.push_back(static_cast<unsigned char>(v >> 8));
   b.push_back(static_cast<unsigned char>(v >> 16));
   b.push_back(static_cast<unsigned char>(v >> 24));
+}
+
+void putBe32At(std::vector<unsigned char> &b, size_t at, uint32_t v) {
+  b[at] = static_cast<unsigned char>(v >> 24);
+  b[at + 1] = static_cast<unsigned char>(v >> 16);
+  b[at + 2] = static_cast<unsigned char>(v >> 8);
+  b[at + 3] = static_cast<unsigned char>(v);
+}
+
+// Uncompressed KF8. PalmDOC text length is flow 0. A later flow is past 64KB.
+bool writeLateKf8(const char *path) {
+  const std::string html = "<html class=\"hltr\"><body><p><span class=\"late\">\u3042</span></p></body></html>";
+  const std::string css1 = "p{font-weight:normal}";
+  std::string raw = html + css1;
+  raw.append(70000, ' ');
+  raw += ".late{border-style:solid none none none;border-width:2px}";
+  const uint32_t flow0 = static_cast<uint32_t>(html.size());
+  const uint32_t flow1 = flow0 + static_cast<uint32_t>(css1.size());
+  const uint32_t flow2 = static_cast<uint32_t>(raw.size());
+  constexpr uint32_t kRec = 4096;
+  const uint16_t textCount = static_cast<uint16_t>((raw.size() + kRec - 1) / kRec);
+  const uint16_t nrec = static_cast<uint16_t>(textCount + 2);
+
+  std::vector<unsigned char> head(16u + 0xF8u, 0);
+  head[1] = 1;
+  putBe32At(head, 4, flow0);
+  head[8] = static_cast<unsigned char>(textCount >> 8);
+  head[9] = static_cast<unsigned char>(textCount);
+  head[10] = 0x10;
+  std::memcpy(head.data() + 16, "MOBI", 4);
+  putBe32At(head, 20, 0xF8);
+  putBe32At(head, 24, 2);
+  putBe32At(head, 28, 65001);
+  putBe32At(head, 36, 8);
+  putBe32At(head, 0x6c, 0xFFFFFFFFu);
+  putBe32At(head, 0x70, 0xFFFFFFFFu);
+  putBe32At(head, 0xc0, static_cast<uint32_t>(textCount + 1));
+  putBe32At(head, 0xf8, 0xFFFFFFFFu);
+  putBe32At(head, 0xfc, 0xFFFFFFFFu);
+
+  std::vector<unsigned char> fdst;
+  fdst.insert(fdst.end(), {'F', 'D', 'S', 'T', 0, 0, 0, 0});
+  put32be(fdst, 3);
+  put32be(fdst, 0);
+  put32be(fdst, flow0);
+  put32be(fdst, flow0);
+  put32be(fdst, flow1);
+  put32be(fdst, flow1);
+  put32be(fdst, flow2);
+
+  std::vector<unsigned char> file(78, 0);
+  std::memcpy(file.data() + 60, "BOOK", 4);
+  std::memcpy(file.data() + 64, "MOBI", 4);
+  file[76] = static_cast<unsigned char>(nrec >> 8);
+  file[77] = static_cast<unsigned char>(nrec);
+  const uint32_t data0 = 78u + static_cast<uint32_t>(nrec) * 8u;
+  file.resize(data0, 0);
+  auto note = [&](uint16_t i, uint32_t off) {
+    const size_t at = 78u + static_cast<size_t>(i) * 8u;
+    file[at] = static_cast<unsigned char>(off >> 24);
+    file[at + 1] = static_cast<unsigned char>(off >> 16);
+    file[at + 2] = static_cast<unsigned char>(off >> 8);
+    file[at + 3] = static_cast<unsigned char>(off);
+    file[at + 7] = static_cast<unsigned char>(i);
+  };
+  note(0, data0);
+  file.insert(file.end(), head.begin(), head.end());
+  uint32_t off = data0 + static_cast<uint32_t>(head.size());
+  for (uint16_t t = 0; t < textCount; ++t) {
+    note(static_cast<uint16_t>(t + 1), off);
+    const size_t a = static_cast<size_t>(t) * kRec;
+    const size_t n = a + kRec < raw.size() ? kRec : raw.size() - a;
+    file.insert(file.end(), raw.begin() + static_cast<std::ptrdiff_t>(a),
+                raw.begin() + static_cast<std::ptrdiff_t>(a + n));
+    off += static_cast<uint32_t>(n);
+  }
+  note(static_cast<uint16_t>(textCount + 1), off);
+  file.insert(file.end(), fdst.begin(), fdst.end());
+  return writeBytes(path, file.data(), file.size());
 }
 
 struct ZipPart {
@@ -923,36 +1169,41 @@ bool writeStoredZip(const char *path, const ZipPart *parts, int n) {
   return writeBytes(path, out.data(), out.size());
 }
 
-struct PlateGrab {
-  uint32_t cp = 0;
-  int nPic = 0;
-};
-
-bool takePlate(void *ctx, const ts::Atom &atom, uint32_t) {
-  auto *g = static_cast<PlateGrab *>(ctx);
-  if (atom.kind == ts::AtomKind::Picture) {
-    g->cp = atom.cp;
-    g->nPic++;
+bool atomHas(const char *path, uint32_t cp, uint8_t &emph, uint8_t &box, uint8_t &px) {
+  ts::AtomReader reader;
+  if (!reader.open(path)) {
+    return false;
   }
-  return true;
+  ts::Atom atom{};
+  while (reader.next(atom)) {
+    if (atom.kind == ts::AtomKind::Ch && atom.cp == cp) {
+      emph = static_cast<uint8_t>(atom.emphasis & ts::kEmphasisMask);
+      box = atom.box;
+      px = atom.rulePx;
+      return true;
+    }
+  }
+  return false;
 }
 
-void testForcePlate() {
-  const char *html = "<html><body><img src=\"a.jpg\"/></body></html>";
-  PlateGrab g;
-  ts::AtomSink sink;
-  sink.ctx = &g;
-  sink.emit = takePlate;
-  sink.picture = [](void *, const char *) -> uint16_t { return 3; };
-  sink.imageLongSide = [](void *, const char *) -> int { return 200; };
-  sink.forcePlate = true;
-  check(ts::htmlToAtoms(html, std::strlen(html), sink), "force plate html");
-  check(g.nPic == 1 && g.cp == (3u | ts::kPictureForcePage), "a pre-paginated image is its own page");
-  g = PlateGrab{};
-  sink.ctx = &g;
-  sink.forcePlate = false;
-  check(ts::htmlToAtoms(html, std::strlen(html), sink), "column plate html");
-  check(g.nPic == 1 && g.cp == 3, "the same image stays unmarked until layout");
+void testLateKf8() {
+  char dir[] = "/tmp/yomu-kf8-XXXXXX";
+  if (!mkdtemp(dir)) {
+    check(false, "kf8 dir");
+    return;
+  }
+  ts_hal_set_root(dir);
+  char path[256];
+  std::snprintf(path, sizeof path, "%s/late.mobi", dir);
+  check(writeLateKf8(path), "write late kf8");
+  ts::MobiBook book;
+  const bool opened = book.open(path, "/.yomu/late.atom");
+  check(opened, book.lastError()[0] ? book.lastError() : "open late kf8");
+  uint8_t emph = 0;
+  uint8_t box = 0;
+  uint8_t px = 0;
+  check(opened && atomHas("/.yomu/late.atom", 0x3042, emph, box, px) && emph == ts::kEmLine && box == 0 && px == 2,
+        "a later kf8 flow past 64KB is a 2px side line");
 }
 
 void testFixedEpub() {
@@ -989,10 +1240,26 @@ void testFixedEpub() {
       "<itemref idref=\"a\" properties=\"rendition:layout-pre-paginated\"/>"
       "<itemref idref=\"b\"/>"
       "</spine></package>";
+  std::string css(70000, ' ');
+  css += ".late{border-style:solid none none none;border-width:2px}";
+  const std::string sheetChapter =
+      "<?xml version=\"1.0\"?><html><head><link rel=\"stylesheet\" href=\"late.css\"/></head>"
+      "<body><p><span class=\"late\">\u3044</span>"
+      "\u3042\u3046\u3048\u304A\u304B\u304D\u304F\u3051\u3053\u3055\u3057\u3059\u305B\u305D"
+      "\u305F\u3061\u3064\u3066\u3068\u306A\u306B\u306C\u306D\u306E\u306F\u3072\u3075\u3078\u307B"
+      "</p></body></html>";
+  const std::string sheetOpf =
+      "<?xml version=\"1.0\"?><package version=\"3.0\"><metadata></metadata><manifest>"
+      "<item id=\"c\" href=\"c.xhtml\" media-type=\"application/xhtml+xml\"/>"
+      "<item id=\"s\" href=\"late.css\" media-type=\"text/css\"/>"
+      "</manifest><spine><itemref idref=\"c\"/></spine></package>";
+
   char fixedPath[256];
   char mixedPath[256];
+  char sheetPath[256];
   std::snprintf(fixedPath, sizeof fixedPath, "%s/fixed.epub", dir);
   std::snprintf(mixedPath, sizeof mixedPath, "%s/mixed.epub", dir);
+  std::snprintf(sheetPath, sizeof sheetPath, "%s/sheet.epub", dir);
   const ZipPart fixedParts[] = {{"META-INF/container.xml", &container},
                                 {"OEBPS/content.opf", &fixedOpf},
                                 {"OEBPS/a.xhtml", &chapter},
@@ -1001,8 +1268,13 @@ void testFixedEpub() {
                                 {"OEBPS/content.opf", &mixedOpf},
                                 {"OEBPS/a.xhtml", &chapter},
                                 {"OEBPS/b.xhtml", &chapter}};
+  const ZipPart sheetParts[] = {{"META-INF/container.xml", &container},
+                                {"OEBPS/content.opf", &sheetOpf},
+                                {"OEBPS/c.xhtml", &sheetChapter},
+                                {"OEBPS/late.css", &css}};
   check(writeStoredZip(fixedPath, fixedParts, 4), "write fixed epub");
   check(writeStoredZip(mixedPath, mixedParts, 4), "write mixed epub");
+  check(writeStoredZip(sheetPath, sheetParts, 4), "write sheet epub");
 
   ts::EpubBook fixed;
   check(!fixed.open(fixedPath, "/.yomu/fixed.atom") && std::strcmp(fixed.lastError(), "fixed layout") == 0,
@@ -1010,6 +1282,14 @@ void testFixedEpub() {
   ts::EpubBook mixed;
   const bool mixedOk = mixed.open(mixedPath, "/.yomu/mixed.atom");
   check(mixedOk && mixed.spineCount() == 2, mixed.lastError()[0] ? mixed.lastError() : "a mixed spine stays open");
+  ts::EpubBook sheet;
+  const bool sheetOk = sheet.open(sheetPath, "/.yomu/sheet.atom");
+  check(sheetOk, sheet.lastError()[0] ? sheet.lastError() : "open linked sheet");
+  uint8_t emph = 0;
+  uint8_t box = 0;
+  uint8_t px = 0;
+  check(sheetOk && atomHas("/.yomu/sheet.atom", 0x3044, emph, box, px) && emph == ts::kEmLine && box == 0 && px == 2,
+        "a linked sheet past 64KB is a 2px side line");
 }
 
 void testLongPath() {
@@ -1101,7 +1381,11 @@ extern "C" int test_typeset_rules(void) {
   testAozora();
   testMarks();
   testSwatch();
+  testOneSide();
   testForcePlate();
+  testLargeStyle();
+  testRuleOnRun();
+  testLateKf8();
   testFixedEpub();
   testLongPath();
   return g_fails;

@@ -11,8 +11,8 @@ Follow the struct, rebuild, and face-list rules in `AGENTS.md`.
 
 ## Cache magics
 
-Atom files are IRAC, `kAtomMagic` `0x43415249` in `../typeset/src/AtomFile.h`. A mismatch rebuilds the file. Character, group, and 縦中横 records store a 囲み罫 id after `startEm`, then a background gray. 0 is none. Gray 0 is no fill. A value of 2 or more is the 8-bit gray, and black is stored as 2. The page index does not store either.
-KF8 plan files are MRP3, `MobiBook::kPlanMagic`. The PalmDOC text length is only the first FDST flow. Unpack through the last flow so later stylesheets are kept. An older plan rebuilds the atoms of that `.mobi`, `.azw3`, or `.azw`.
+Atom files are IRAE, `kAtomMagic` `0x45415249` in `../typeset/src/AtomFile.h`. A mismatch rebuilds the file. Character, group, and 縦中横 records store a 囲み罫 id after `startEm`, then a background gray, then the CSS border width in px, then an em width as a percent of the em, a rem flag, and a side mask. 0 is none. Gray 0 is no fill. A value of 2 or more is the 8-bit gray, and black is stored as 2. A px width of 0 keeps the em thickness. A positive em width is that percent; the rem flag uses the body em. A side mask of 0 draws every side. The page index does not store these.
+KF8 plan files are MRP5, `MobiBook::kPlanMagic`. Each stylesheet flow is scanned on its own and the plan stores those face rules, including an em width and a partial-border mask. The PalmDOC text length is only the first FDST flow. Unpack through the last flow. An older plan rebuilds the atoms of that `.mobi`, `.azw3`, or `.azw`.
 yomu's `TypesetBook` is `../typeset/book/TypesetBook.h`. The X4 Classic class is `../yomu-mini/lib/Book/TypesetBook.h`.
 A book path is stored in 1024 bytes, the same size as the shelf path in `src/ui/screen.h`. `ZipArchive` keeps that copy so it can reopen the file. A longer path fails open with `path long`.
 `pageCount()` returns the pages indexed so far, clamped at 65535.
@@ -31,11 +31,11 @@ Paint bold with `FT_LOAD_NO_BITMAP`, then `FT_Outline_Embolden(&gs->outline, (FT
 
 ## Face CSS
 
-Rules live in `../typeset/src/FaceCss.cpp`. A selector is an element, a class, or both. The cap is `kMaxFaceRules` (96). Specificity is 1 for an element, 10 for a class, and 11 for both.
-Read at most `kMaxCssLinks` (4) linked sheets, each at most `kMaxCssBytes` (65536). Skip a `<style>` block larger than that.
+Rules live in `../typeset/src/FaceCss.cpp`. A selector is an element, a class, or both. The cap is `kMaxFaceRules` (1536). Specificity is 1 for an element, 10 for a class, and 11 for both.
+Read at most `kMaxCssLinks` (8) linked sheets, each at most `kMaxCssBytes` (2MB). A `<style>` block is kept up to that size.
 `weight` 0 inherits, 1 is normal, and 2 is bold. `b` and `strong` are bold unless a rule says normal. An inline style wins.
 `pct` 0 inherits. Otherwise it is a percent of the parent, or of the body when `root` is set (`rem`). The parser clamps a declared percent to 40–250. The computed percent stored on the atom is 0 at 100, otherwise 40–200.
-A four-side `border` or `border-style` is paint `box` 2 and starts a 囲み罫. One side (`border-bottom`, `border-right`, and the style forms) is 傍線, `kEmLine`. Calibre writes underlines that way. Paint `box` 1 is explicit none and does not start a rule. The atom stores the 囲み罫 id from the cache section, not this paint value.
+A four-side `border` or `border-style` is paint `box` 2 and starts a 囲み罫. The side mask stays 0, so paint draws every side. One visible side is 傍線, `kEmLine`, in the traditional slot: a side property such as `border-bottom`, or a four-value `border-style` with a single visible side. Two or three visible sides are a 囲み罫 that draws only those sides. The mask bits are top, right, bottom, left. A width in px is stored as px. A width in em or rem is a percent of the em, and rem uses the body em. 0 leaves the em thickness. A width that lives in its own rule is kept and merged with the style rule of the same selector. Calibre writes underlines as one side. Paint `box` 1 is explicit none and does not start a rule. The atom stores the 囲み罫 id from the cache section, not this paint value.
 The contents list prefers the EPUB nav document, then the NCX. The fragment after `#` is kept.
 
 ## Collections
