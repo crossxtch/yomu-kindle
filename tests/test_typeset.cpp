@@ -923,6 +923,95 @@ bool writeStoredZip(const char *path, const ZipPart *parts, int n) {
   return writeBytes(path, out.data(), out.size());
 }
 
+struct PlateGrab {
+  uint32_t cp = 0;
+  int nPic = 0;
+};
+
+bool takePlate(void *ctx, const ts::Atom &atom, uint32_t) {
+  auto *g = static_cast<PlateGrab *>(ctx);
+  if (atom.kind == ts::AtomKind::Picture) {
+    g->cp = atom.cp;
+    g->nPic++;
+  }
+  return true;
+}
+
+void testForcePlate() {
+  const char *html = "<html><body><img src=\"a.jpg\"/></body></html>";
+  PlateGrab g;
+  ts::AtomSink sink;
+  sink.ctx = &g;
+  sink.emit = takePlate;
+  sink.picture = [](void *, const char *) -> uint16_t { return 3; };
+  sink.imageLongSide = [](void *, const char *) -> int { return 200; };
+  sink.forcePlate = true;
+  check(ts::htmlToAtoms(html, std::strlen(html), sink), "force plate html");
+  check(g.nPic == 1 && g.cp == (3u | ts::kPictureForcePage), "a pre-paginated image is its own page");
+  g = PlateGrab{};
+  sink.ctx = &g;
+  sink.forcePlate = false;
+  check(ts::htmlToAtoms(html, std::strlen(html), sink), "column plate html");
+  check(g.nPic == 1 && g.cp == 3, "the same image stays unmarked until layout");
+}
+
+void testFixedEpub() {
+  char dir[] = "/tmp/yomu-epub-XXXXXX";
+  if (!mkdtemp(dir)) {
+    check(false, "epub dir");
+    return;
+  }
+  ts_hal_set_root(dir);
+  const std::string container =
+      "<?xml version=\"1.0\"?><container version=\"1.0\"><rootfiles>"
+      "<rootfile full-path=\"OEBPS/content.opf\" media-type=\"application/oebps-package+xml\"/>"
+      "</rootfiles></container>";
+  const std::string chapter =
+      "<?xml version=\"1.0\"?><html><body><p>"
+      "\u3042\u3044\u3046\u3048\u304A\u304B\u304D\u304F\u3051\u3053\u3055\u3057\u3059\u305B\u305D"
+      "\u305F\u3061\u3064\u3066\u3068\u306A\u306B\u306C\u306D\u306E\u306F\u3072\u3075\u3078\u307B"
+      "</p></body></html>";
+  const std::string fixedOpf =
+      "<?xml version=\"1.0\"?><package version=\"3.0\"><metadata>"
+      "<meta property=\"rendition:layout\" content=\"pre-paginated\"/>"
+      "</metadata><manifest>"
+      "<item id=\"a\" href=\"a.xhtml\" media-type=\"application/xhtml+xml\"/>"
+      "<item id=\"b\" href=\"b.xhtml\" media-type=\"application/xhtml+xml\"/>"
+      "</manifest><spine>"
+      "<itemref idref=\"a\" properties=\"rendition:layout-pre-paginated\"/>"
+      "<itemref idref=\"b\" properties=\"rendition:layout-pre-paginated\"/>"
+      "</spine></package>";
+  const std::string mixedOpf =
+      "<?xml version=\"1.0\"?><package version=\"3.0\"><metadata></metadata><manifest>"
+      "<item id=\"a\" href=\"a.xhtml\" media-type=\"application/xhtml+xml\"/>"
+      "<item id=\"b\" href=\"b.xhtml\" media-type=\"application/xhtml+xml\"/>"
+      "</manifest><spine>"
+      "<itemref idref=\"a\" properties=\"rendition:layout-pre-paginated\"/>"
+      "<itemref idref=\"b\"/>"
+      "</spine></package>";
+  char fixedPath[256];
+  char mixedPath[256];
+  std::snprintf(fixedPath, sizeof fixedPath, "%s/fixed.epub", dir);
+  std::snprintf(mixedPath, sizeof mixedPath, "%s/mixed.epub", dir);
+  const ZipPart fixedParts[] = {{"META-INF/container.xml", &container},
+                                {"OEBPS/content.opf", &fixedOpf},
+                                {"OEBPS/a.xhtml", &chapter},
+                                {"OEBPS/b.xhtml", &chapter}};
+  const ZipPart mixedParts[] = {{"META-INF/container.xml", &container},
+                                {"OEBPS/content.opf", &mixedOpf},
+                                {"OEBPS/a.xhtml", &chapter},
+                                {"OEBPS/b.xhtml", &chapter}};
+  check(writeStoredZip(fixedPath, fixedParts, 4), "write fixed epub");
+  check(writeStoredZip(mixedPath, mixedParts, 4), "write mixed epub");
+
+  ts::EpubBook fixed;
+  check(!fixed.open(fixedPath, "/.yomu/fixed.atom") && std::strcmp(fixed.lastError(), "fixed layout") == 0,
+        "an all pre-paginated spine is fixed layout");
+  ts::EpubBook mixed;
+  const bool mixedOk = mixed.open(mixedPath, "/.yomu/mixed.atom");
+  check(mixedOk && mixed.spineCount() == 2, mixed.lastError()[0] ? mixed.lastError() : "a mixed spine stays open");
+}
+
 void testLongPath() {
   char dir[] = "/tmp/yomu-long-XXXXXX";
   if (!mkdtemp(dir)) {
@@ -1012,6 +1101,8 @@ extern "C" int test_typeset_rules(void) {
   testAozora();
   testMarks();
   testSwatch();
+  testForcePlate();
+  testFixedEpub();
   testLongPath();
   return g_fails;
 }

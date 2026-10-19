@@ -27,7 +27,7 @@ Paint bold with `FT_LOAD_NO_BITMAP`, then `FT_Outline_Embolden(&gs->outline, (FT
 
 ## Margin
 
-`LayoutOptions.margin` is the top and bottom only. `TypesetBook::open` sets 16, then shrinks it when `height - 32` is shorter than one em. A full-page picture uses that inset. A column picture does not.
+`LayoutOptions.margin` is the top and bottom only. `TypesetBook::open` sets 16, then shrinks it when `height - 32` is shorter than one em. A full-page picture uses that inset. A column picture does not. A pre-paginated spine item marks its picture as its own page.
 
 ## Face CSS
 
