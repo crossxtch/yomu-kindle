@@ -4,6 +4,7 @@ Kindle reader for `.epub`, `.txt`, and DRM-free `.mobi` / `.azw3`. The checkout 
 
 ## Books and UI
 
+Sample books are in `~/books/japanese` and `~/epub`.
 Open `.epub`, `.txt`, and DRM-free reflowable `.mobi`, `.azw3`, and `.azw`. Leave `.xtch`, encrypted books, fixed-layout books, and KFX unsupported.
 Strings drawn by the C UI stay Japanese. `README.md` and both `INSTALL.txt` files stay English.
 
