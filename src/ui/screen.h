@@ -35,8 +35,7 @@ typedef struct Chrome {
 } Chrome;
 
 enum { SCR_LIB = 0, SCR_READ, SCR_MENU, SCR_CHAP, SCR_XFER, SCR_JUMP, SCR_TYPE };
-enum { ACT_RESUME = 1, ACT_CHAPTERS, ACT_LIBRARY, ACT_TYPE, ACT_QUIT, ACT_JUMP };
-enum { LIB_TRANSFER = 0, LIB_LEAVE = 1, LIB_BOOKS = 2 };
+enum { ACT_RESUME = 1, ACT_CHAPTERS, ACT_LIBRARY, ACT_TYPE, ACT_QUIT, ACT_JUMP, ACT_XFER };
 enum { HOT_BACK = -1, HOT_UP = -2, HOT_DOWN = -3, HOT_JUMP_GO = -4, HOT_JUMP_BS = -5, HOT_SMALL = -6, HOT_BIG = -7 };
 
 typedef struct State {
@@ -85,6 +84,8 @@ typedef struct State {
 Layout layout_of(int width, int height);
 void move_cursor(int *cursor, int *top, int count, int window, int delta);
 int list_delta(AppEvKind kind, int window);
+/* Top and bottom eighth of the screen. A swipe has to start there. */
+int edge_band(int height);
 void list_chrome(const Layout *layout, int height, int total, int top, int need_back, Chrome *out);
 void fit_list(const Layout *layout, int height, int total, int *cursor, int *top, int need_back, Chrome *out);
 void page_list(int *cursor, int *top, int total, int window, int dir);

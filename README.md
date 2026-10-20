@@ -44,7 +44,7 @@ that folder if it is missing. Subfolders are included. yomu starts in
 landscape. On a Paperwhite 11 that is 1648×1236, turned 90° clockwise.
 That orientation is fixed. `YOMU_ROTATE` is ignored. Each page is typeset to that panel. Hidden folders are skipped, and
 so are `system`, `extensions`, and `lost+found` at the top of `books`. 終了
-on the menu exits yomu, and the launcher restores the Kindle UI. The
+on the library menu exits yomu, and the launcher restores the Kindle UI. The
 power button sleeps the Kindle when the framework is still running, so
 use the **yomu** item. Idle sleep stays off until 終了. yomu is
 still running when the screen wakes. The frontlight stays off for the
@@ -58,12 +58,15 @@ Tap anywhere on a page to go forward. Swipe down from the top eighth of
 the screen to open the menu over the page. Swipe up from the bottom eighth
 to go back one page. Any other touch on the page does nothing.
 
-The menu lists 再開, 目次, 本棚, 文字, and 終了. The top line is the current
+The menu lists 再開, 目次, 本棚, and 文字. The top line is the current
 page and the page count, as in 3 / 120 ページ. Tap that line to type a
 page number and jump. 目次 is shown when the book has a chapter table. 再開 returns to the page. 本棚 returns
-to the library. 文字 sets the type size and the face. 終了 exits yomu. Tap the page below the menu to close
-it. 戻る does the same. The second library row is 終了. 戻る from the
-library also exits.
+to the library. 文字 sets the type size and the face. Tap the page below the menu to close
+it. 戻る does the same. 戻る from the library also exits.
+
+Swipe down from the top eighth of the library to open the same kind of menu.
+It lists 転送 and 終了. 転送 opens file transfer. 終了 exits yomu.
+Tap below the menu, or 戻る, to close it and stay on the shelf.
 
 文字 offers 小 and 大 around the fitted size. The steps are 最小, 小さめ,
 やや小, 標準, やや大, 大きめ, and 最大. 標準 is the size yomu picks for
@@ -95,9 +98,10 @@ SVG is left out. A picture smaller than 64 pixels on both sides is shown
 as its alt text instead. A book keeps at most 512 pictures. A spine of up
 to 2048 files opens.
 
-Every screen except the page takes taps only. A swipe there does nothing.
+The page and the library open their menu with a downward swipe from the top
+eighth. Every other screen takes taps only. A swipe there does nothing.
 戻る, 上, and 下 appear when that screen needs them. 上 and 下
-move a page. The chapter list and 転送 each have a button that leaves
+move a page. The chapter list and the transfer screen each have a button that leaves
 the screen. Keys still move the highlight.
 
 The power button sleeps the Kindle. The page stays up, with スリープ中 in a
@@ -116,13 +120,14 @@ Progress is stored in `/mnt/us/yomu/progress.tsv`. The log is
 
 ## File transfer
 
-The first library row is 転送. Opening it serves
+転送 is in the library menu. Swipe down from the top of the shelf and choose it.
+Opening it serves
 the book folder (`YOMU_ROOT`, normally `/mnt/us/yomu/books`). A browser on the same
 Wi-Fi opens `http://yomu.local/` when the server is on port 80, or
 `http://yomu.local:8080/` otherwise. The screen also shows the numeric
 address. The page lists, uploads, downloads, renames, moves,
 and deletes files. Tap 戻る to leave the screen. The server keeps running
-until yomu exits. The library row then reads 動作中.
+until yomu exits.
 
 There is no password. Anyone who can reach the Kindle can change files in
 that folder until yomu exits. Names that start with a dot are

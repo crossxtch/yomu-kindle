@@ -53,7 +53,7 @@ void move_cursor(int *cursor, int *top, int count, int window, int delta) {
   }
 }
 
-/* Keys only. Outside the reader, a swipe does nothing; Up and Down are buttons. */
+/* Keys only. A swipe is not a list move. Up and Down are buttons. */
 int list_delta(AppEvKind kind, int window) {
   switch (kind) {
     case EV_UP:
@@ -69,6 +69,14 @@ int list_delta(AppEvKind kind, int window) {
     default:
       return 0;
   }
+}
+
+int edge_band(int height) {
+  int edge = height / 8;
+  if (edge < 1) {
+    edge = 1;
+  }
+  return edge;
 }
 
 static int rows_for(const Layout *layout, int height, int with_bar) {
@@ -281,7 +289,8 @@ void paint_footer(State *st, const Layout *layout, const char *hint) {
 }
 
 /* Twice the previous menu on Kindle-sized panels. Scale 2 stays at 2x.
- * Five rows fill a 200px host, so the chapter-back tap uses a 280px host. */
+ * Four reader rows still leave a gap on a 200px host. The chapter list
+ * uses a 280px host so 戻る sits below that gap. */
 int menu_text_scale(const Layout *layout) {
   return layout->scale < 3 ? layout->scale * 2 : layout->scale * 4;
 }

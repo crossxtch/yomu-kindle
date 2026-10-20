@@ -1,4 +1,4 @@
-/* Bookshelf: transfer, exit, and one row per book. */
+/* Bookshelf: one row per book. Swipe down from the top to open the menu. */
 
 #include "screen.h"
 
@@ -9,7 +9,7 @@
 #include <string.h>
 #include <time.h>
 
-static int library_count(const State *st) { return st->nbooks + LIB_BOOKS; }
+static int library_count(const State *st) { return st->nbooks; }
 
 int library_clock_box(const Layout *layout, int width, const char *count, int *x, int *y, int *w, int *h) {
   int scale;
@@ -205,27 +205,9 @@ void paint_library(State *st) {
     if (index == st->lib_cursor) {
       draw_fill(host->gray, host->w, host->h, host->w, 0, y, layout.pad, layout.row_h, 0);
     }
-    if (index == LIB_TRANSFER) {
-      int text_x = layout.pad;
-      int text_y = y + layout.pad;
-      draw_text(host->gray, host->w, host->h, host->w, text_x, text_y, layout.scale, "転送", 0);
-      draw_text(host->gray, host->w, host->h, host->w, text_x, text_y + 8 * layout.scale + 2, layout.scale,
-                st->fs ? "動作中" : "ファイルを送る", 80);
-      add_hot(st, 0, y, host->w, layout.row_h, LIB_TRANSFER);
-      continue;
-    }
-    if (index == LIB_LEAVE) {
-      int text_x = layout.pad;
-      int text_y = y + layout.pad;
-      draw_text(host->gray, host->w, host->h, host->w, text_x, text_y, layout.scale, "終了", 0);
-      draw_text(host->gray, host->w, host->h, host->w, text_x, text_y + 8 * layout.scale + 2, layout.scale,
-                "yomuを終了", 80);
-      add_hot(st, 0, y, host->w, layout.row_h, LIB_LEAVE);
-      continue;
-    }
-    const YomuBook *book = &st->books[index - LIB_BOOKS];
+    const YomuBook *book = &st->books[index];
     char caption[256];
-    yomu_book_caption(book, index - LIB_BOOKS, caption, sizeof caption);
+    yomu_book_caption(book, index, caption, sizeof caption);
     int text_x = layout.pad;
     int text_y = y + layout.pad;
     draw_text(host->gray, host->w, host->h, host->w, text_x, text_y, layout.scale, caption, 0);
@@ -248,6 +230,11 @@ int handle_library(State *st, const AppEvent *ev) {
   int total = library_count(st);
   Chrome chrome;
   fit_list(&layout, st->host->h, total, &st->lib_cursor, &st->lib_top, 0, &chrome);
+  if (ev->kind == EV_SWIPE_DOWN && ev->y0 < edge_band(st->host->h)) {
+    st->screen = SCR_MENU;
+    st->menu_cursor = 0;
+    return 1;
+  }
   if (ev->kind == EV_TAP) {
     int id = hit_hot(st, ev->x, ev->y);
     if (id == HOT_UP || id == HOT_DOWN) {
@@ -258,31 +245,14 @@ int handle_library(State *st, const AppEvent *ev) {
       return 0;
     }
     st->lib_cursor = id;
-    if (id == LIB_TRANSFER) {
-      return enter_xfer(st);
-    }
-    if (id == LIB_LEAVE) {
-      st->quit = 1;
-      return 1;
-    }
-    if (id < LIB_BOOKS || id - LIB_BOOKS >= st->nbooks) {
-      return 0;
-    }
-    open_book(st, st->books[id - LIB_BOOKS].path);
+    open_book(st, st->books[id].path);
     return 1;
   }
   if (ev->kind == EV_CONFIRM) {
-    if (st->lib_cursor == LIB_TRANSFER) {
-      return enter_xfer(st);
-    }
-    if (st->lib_cursor == LIB_LEAVE) {
-      st->quit = 1;
-      return 1;
-    }
-    if (st->lib_cursor < LIB_BOOKS || st->lib_cursor - LIB_BOOKS >= st->nbooks) {
+    if (st->lib_cursor < 0 || st->lib_cursor >= st->nbooks) {
       return 0;
     }
-    open_book(st, st->books[st->lib_cursor - LIB_BOOKS].path);
+    open_book(st, st->books[st->lib_cursor].path);
     return 1;
   }
   if (ev->kind == EV_BACK || ev->kind == EV_QUIT) {

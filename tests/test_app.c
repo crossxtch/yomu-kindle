@@ -341,8 +341,12 @@ static int reader_poll(AppHost *host, AppEvent *event) {
     case 12:
       event->kind = EV_CONFIRM;
       return 1;
+    case 13:
+      expect(!page_match(g_page1, host), "the last menu row stays in yomu");
+      event->kind = EV_QUIT;
+      return -1;
     default:
-      expect(0, "leave did not exit");
+      expect(0, "reader menu script did not finish");
       event->kind = EV_QUIT;
       return -1;
   }
@@ -381,7 +385,7 @@ static void test_reader_gestures(void) {
   g_reader_step = 0;
   g_reader_path = book_path;
   expect(app_run(&host, book_path) == 0, "gesture run");
-  expect(g_reader_step == 13, "leave row exits");
+  expect(g_reader_step == 14, "reader menu has no exit row");
   free(gray);
   free(g_page0);
   free(g_page1);
@@ -791,7 +795,7 @@ static void test_jump_page(void) {
 }
 
 /* Library height 200 uses scale 2: header 32, row 48, footer 24, button bar at y 128.
- * The chapter run is 280 tall so five menu rows (panel 232) still leave a gap under the menu.
+ * The chapter run is 280 tall so the reader menu still leaves a gap, and
  * 戻る on that chapter list is the bar at y 208. */
 static void test_tap_buttons(void) {
   char dir[] = "/tmp/yomu-tap-XXXXXX";
@@ -802,10 +806,16 @@ static void test_tap_buttons(void) {
   char book_path[256];
   char extra_path[256];
   TsBook *opened;
+  char third_path[256];
+  char fourth_path[256];
   snprintf(book_path, sizeof book_path, "%s/Demo.epub", dir);
   snprintf(extra_path, sizeof extra_path, "%s/Extra.txt", dir);
+  snprintf(third_path, sizeof third_path, "%s/Third.txt", dir);
+  snprintf(fourth_path, sizeof fourth_path, "%s/Fourth.txt", dir);
   expect(write_chapter_epub(book_path) == 0, "tap book");
   expect(write_text(extra_path, k_line) == 0, "second book");
+  expect(write_text(third_path, k_line) == 0, "third book");
+  expect(write_text(fourth_path, k_line) == 0, "fourth book");
   opened = ts_open(book_path, dir, NULL, width, height);
   expect(opened != NULL, ts_error(NULL));
   if (opened) {
@@ -866,9 +876,124 @@ static void test_tap_buttons(void) {
   g_page1 = NULL;
   remove(book_path);
   remove(extra_path);
+  remove(third_path);
+  remove(fourth_path);
   char prog[256];
   snprintf(prog, sizeof prog, "%s/progress.tsv", dir);
   remove(prog);
+  rmdir(dir);
+}
+
+/* 120x200 is scale 2. The shelf menu has no page line, so 転送 is y 8..48
+ * and 終了 is y 48..88. A tap at y 150 is below the panel. 転送's 戻る
+ * button is the bar at y 128. */
+static int g_libmenu_step;
+static uint8_t *g_libmenu_shelf;
+
+static int libmenu_poll(AppHost *host, AppEvent *event) {
+  size_t n = (size_t)host->w * (size_t)host->h;
+  memset(event, 0, sizeof *event);
+  switch (g_libmenu_step++) {
+    case 0:
+      memcpy(g_libmenu_shelf, host->gray, n);
+      event->kind = EV_SWIPE_DOWN;
+      event->y0 = host->h / 2;
+      return 1;
+    case 1:
+      expect(memcmp(g_libmenu_shelf, host->gray, n) == 0, "a middle swipe stays on the shelf");
+      event->kind = EV_SWIPE_DOWN;
+      event->y0 = 0;
+      return 1;
+    case 2:
+      expect(memcmp(g_libmenu_shelf, host->gray, n) != 0, "a top swipe opens the menu");
+      event->kind = EV_TAP;
+      event->x = 10;
+      event->y = 150;
+      return 1;
+    case 3:
+      expect(memcmp(g_libmenu_shelf, host->gray, n) == 0, "a tap below the menu returns to the shelf");
+      event->kind = EV_SWIPE_DOWN;
+      event->y0 = 0;
+      return 1;
+    case 4:
+      event->kind = EV_TAP;
+      event->x = 10;
+      event->y = 20;
+      return 1;
+    case 5:
+      expect(host->gray[128 * host->w] == 0, "転送 opens the transfer screen");
+      event->kind = EV_BACK;
+      return 1;
+    case 6:
+      expect(memcmp(g_libmenu_shelf, host->gray, n) == 0, "戻る from 転送 returns to the shelf");
+      event->kind = EV_SWIPE_DOWN;
+      event->y0 = 0;
+      return 1;
+    case 7:
+      event->kind = EV_TAP;
+      event->x = 10;
+      event->y = 60;
+      return 1;
+    default:
+      expect(0, "終了 did not leave");
+      event->kind = EV_QUIT;
+      return -1;
+  }
+}
+
+static void test_library_menu(void) {
+  char dir[] = "/tmp/yomu-libmenu-XXXXXX";
+  char book_path[256];
+  const int width = 120;
+  const int height = 200;
+  uint8_t *gray;
+  uint8_t *shelf;
+  AppHost host;
+  const char *saved_port;
+  char kept_port[32];
+  expect(mkdtemp(dir) != NULL, "library menu dir");
+  snprintf(book_path, sizeof book_path, "%s/Demo.txt", dir);
+  expect(write_text(book_path, k_line) == 0, "library menu book");
+  gray = malloc((size_t)width * (size_t)height);
+  shelf = malloc((size_t)width * (size_t)height);
+  expect(gray && shelf, "library menu gray");
+  if (!gray || !shelf) {
+    free(gray);
+    free(shelf);
+    return;
+  }
+  memset(gray, 255, (size_t)width * (size_t)height);
+  memset(&host, 0, sizeof host);
+  host.w = width;
+  host.h = height;
+  host.gray = gray;
+  host.full_every = 8;
+  host.root = dir;
+  host.home = dir;
+  host.present = fake_present;
+  host.poll = libmenu_poll;
+  g_libmenu_step = 0;
+  g_libmenu_shelf = shelf;
+  saved_port = getenv("YOMU_PORT");
+  kept_port[0] = '\0';
+  if (saved_port) {
+    snprintf(kept_port, sizeof kept_port, "%s", saved_port);
+  }
+  expect(setenv("YOMU_PORT", "18765", 1) == 0, "library menu port");
+  expect(app_run(&host, NULL) == 0, "library menu run");
+  if (kept_port[0]) {
+    setenv("YOMU_PORT", kept_port, 1);
+  } else {
+    unsetenv("YOMU_PORT");
+  }
+  clock_offset_load(NULL);
+  expect(g_libmenu_step == 8, "終了 leaves yomu");
+  free(gray);
+  free(shelf);
+  g_libmenu_shelf = NULL;
+  remove(book_path);
+  snprintf(book_path, sizeof book_path, "%s/progress.tsv", dir);
+  remove(book_path);
   rmdir(dir);
 }
 
@@ -3034,6 +3159,7 @@ int main(void) {
   test_sleep_stays();
   test_wake_repaints();
   test_tap_buttons();
+  test_library_menu();
   test_library_clock();
   test_chapter_ranges();
   test_current_chapter();

@@ -240,10 +240,15 @@ static int xfer_poll(AppHost *host, AppEvent *event) {
   memset(event, 0, sizeof *event);
   if (g_xfer_step == 0) {
     g_xfer_step++;
-    event->kind = EV_CONFIRM;
+    event->kind = EV_SWIPE_DOWN;
     return 1;
   }
   if (g_xfer_step == 1) {
+    g_xfer_step++;
+    event->kind = EV_CONFIRM;
+    return 1;
+  }
+  if (g_xfer_step == 2) {
     g_xfer_step++;
     char url[80];
     url_of(url, sizeof url, g_xfer_port, "/");
@@ -256,7 +261,7 @@ static int xfer_poll(AppHost *host, AppEvent *event) {
     event->kind = EV_BACK;
     return 1;
   }
-  if (g_xfer_step == 2) {
+  if (g_xfer_step == 3) {
     g_xfer_step++;
     g_xfer_still = port_open(g_xfer_port);
     event->kind = EV_QUIT;
@@ -296,7 +301,7 @@ static void test_xfer_screen(const char *dir) {
   g_xfer_saw = 0;
   g_xfer_still = 0;
   expect(app_run(&host, NULL) == 0, "xfer screen run");
-  expect(g_xfer_saw == 1, "transfer row serves the page");
+  expect(g_xfer_saw == 1, "転送 serves the page");
   expect(g_xfer_still == 1, "back leaves the server running");
   expect(!port_open(port), "quit stops the server");
   unsetenv("YOMU_PORT");

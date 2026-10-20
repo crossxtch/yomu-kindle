@@ -1,4 +1,6 @@
-/* Page menu over the open book. */
+/* Menu dropped over the open book or the shelf.
+ * The reader lists 再開, 目次, 本棚, and 文字.
+ * The shelf lists 転送 and 終了. */
 
 #include "screen.h"
 
@@ -11,6 +13,17 @@ enum { MENU_CAP = 8 };
 
 static int menu_items(const State *st, int *ids, const char **labels, int cap) {
   int n = 0;
+  if (!reading_open(st)) {
+    if (n < cap) {
+      ids[n] = ACT_XFER;
+      labels[n++] = "転送";
+    }
+    if (n < cap) {
+      ids[n] = ACT_QUIT;
+      labels[n++] = "終了";
+    }
+    return n;
+  }
   if (n < cap) {
     ids[n] = ACT_RESUME;
     labels[n++] = "再開";
@@ -26,10 +39,6 @@ static int menu_items(const State *st, int *ids, const char **labels, int cap) {
   if (n < cap) {
     ids[n] = ACT_TYPE;
     labels[n++] = "文字";
-  }
-  if (n < cap) {
-    ids[n] = ACT_QUIT;
-    labels[n++] = "終了";
   }
   return n;
 }
@@ -72,11 +81,24 @@ static int menu_panel_h(const State *st) {
   return panel_h;
 }
 
+static void close_menu(State *st) {
+  if (reading_open(st)) {
+    st->screen = SCR_READ;
+    st->since_full = 0;
+    return;
+  }
+  st->screen = SCR_LIB;
+}
+
 void paint_menu(State *st) {
   AppHost *host = st->host;
   Layout layout = layout_of(host->w, host->h);
+  if (reading_open(st)) {
+    blit_page(st);
+  } else {
+    paint_library(st);
+  }
   st->nhots = 0;
-  blit_page(st);
   int ids[MENU_CAP];
   const char *labels[MENU_CAP];
   int n = menu_items(st, ids, labels, MENU_CAP);
@@ -150,6 +172,8 @@ static int activate_menu(State *st, int id) {
     case ACT_QUIT:
       st->quit = 1;
       return 1;
+    case ACT_XFER:
+      return enter_xfer(st);
     case ACT_JUMP:
       st->jump_num = 0;
       st->jump_len = 0;
@@ -170,8 +194,7 @@ int handle_menu(State *st, const AppEvent *ev) {
       return activate_menu(st, id);
     }
     if (ev->y >= menu_panel_h(st)) {
-      st->screen = SCR_READ;
-      st->since_full = 0;
+      close_menu(st);
       return 1;
     }
     return 0;
@@ -183,8 +206,7 @@ int handle_menu(State *st, const AppEvent *ev) {
     return activate_menu(st, ids[st->menu_cursor]);
   }
   if (ev->kind == EV_BACK) {
-    st->screen = SCR_READ;
-    st->since_full = 0;
+    close_menu(st);
     return 1;
   }
   int delta = list_delta(ev->kind, n > 0 ? n : 1);

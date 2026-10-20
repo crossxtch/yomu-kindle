@@ -481,15 +481,6 @@ static int turn_page(State *st, int delta) {
   return 1;
 }
 
-/* Top and bottom eighth of the screen. A swipe has to start there. */
-static int edge_band(int h) {
-  int edge = h / 8;
-  if (edge < 1) {
-    edge = 1;
-  }
-  return edge;
-}
-
 static int leave_reader(State *st) {
   close_book(st);
   st->screen = SCR_LIB;
