@@ -559,6 +559,182 @@ void testToc() {
   check(tocBreaks(copy) == 0, "copyright page is not a toc");
 }
 
+// 電書協 小見出し: div.m-top-1em.m-right-*.m-left-* is its own column, indented one em.
+void testKoMidashi() {
+  const char *html =
+      "<html class=\"vrtl\"><head><style>"
+      ".bold { font-weight: bold; }"
+      ".hltr .gfont, .vrtl .gfont { font-family: sans-serif-ja, sans-serif; }"
+      "</style></head><body>"
+      "<p>\u524D\u6587\u3002</p>"
+      "<p><br/></p>"
+      "<div class=\"m-top-1em m-right-0em50 m-left-0em50\">"
+      "<p><span class=\"bold gfont\">\u8A00\u8A9E\u6F2C\u3051</span></p>"
+      "</div>"
+      "<p>\u3000\u672C\u6587</p>"
+      "<div class=\"m-top-1em m-left-0em50 m-right-0em50\">"
+      "<p>\u7532</p><p>\u4E59</p>"
+      "</div>"
+      "<p>\u4E19</p>"
+      "</body></html>";
+  ts::PageLayouter lay;
+  ts::LayoutOptions opt;
+  opt.width = 360;
+  opt.height = 100;
+  opt.em = 20;
+  opt.margin = 0;
+  opt.mode = ts::WritingMode::VerticalRl;
+  lay.begin(opt);
+  ts::FaceRule rules[8]{};
+  uint16_t nRules = 0;
+  ts::scanStyleTags(html, std::strlen(html), rules, nRules);
+  ts::AtomSink sink;
+  sink.ctx = &lay;
+  sink.rules = rules;
+  sink.nRules = nRules;
+  sink.emit = [](void *ctx, const ts::Atom &atom, uint32_t pos) {
+    return static_cast<ts::PageLayouter *>(ctx)->feed(atom, pos) || true;
+  };
+  check(ts::htmlToAtoms(html, std::strlen(html), sink), "ko-midashi html");
+  check(lay.finish() && lay.pageGlyphCount() > 0, "ko-midashi page");
+  const ts::GlyphRun *p = lay.page();
+  const uint16_t n = lay.pageGlyphCount();
+  const ts::GlyphRun *zen = nullptr;
+  const ts::GlyphRun *bun = nullptr;
+  const ts::GlyphRun *title = nullptr;
+  const ts::GlyphRun *body = nullptr;
+  const ts::GlyphRun *kou = nullptr;
+  const ts::GlyphRun *otsu = nullptr;
+  const ts::GlyphRun *hei = nullptr;
+  for (uint16_t i = 0; i < n; ++i) {
+    if (!zen && p[i].cp == 0x524D) {
+      zen = &p[i];
+    } else if (zen && !bun && p[i].cp == 0x6587) {
+      bun = &p[i];
+    } else if (!title && p[i].cp == 0x8A00) {
+      title = &p[i];
+    } else if (!body && p[i].cp == 0x672C) {
+      body = &p[i];
+    } else if (!kou && p[i].cp == 0x7532) {
+      kou = &p[i];
+    } else if (!otsu && p[i].cp == 0x4E59) {
+      otsu = &p[i];
+    } else if (!hei && p[i].cp == 0x4E19) {
+      hei = &p[i];
+    }
+  }
+  check(zen && bun && zen->x == bun->x, "the paragraph before the title stays one column");
+  check(title && zen && title->x != zen->x, "言語漬け starts its own column");
+  check(title && zen && title->y == zen->y + opt.em, "m-top-1em indents the title one em");
+  check(body && title && body->x != title->x, "the paragraph after the title starts a new column");
+  check(kou && otsu && kou->x != otsu->x && kou->y == otsu->y, "a two-line title is two columns");
+  check(hei && zen && otsu && hei->x != otsu->x && hei->y == zen->y, "body after the title returns to the column top");
+  const int pitch = opt.em + (opt.em + 1) / 2;
+  const int half = opt.em / 2;
+  check(zen && title && zen->x - title->x == pitch + half, "half an em before the title column");
+  check(title && body && title->x - body->x == pitch + half, "half an em after the title column");
+  check(kou && otsu && kou->x - otsu->x == pitch, "title lines keep the normal pitch");
+  check(otsu && hei && otsu->x - hei->x == pitch + half, "half an em after the last title line");
+  check(title && (title->flags & ts::kRunBold) != 0 && (title->flags & ts::kRunGothic) != 0,
+        "the title is bold gothic");
+  check(zen && (zen->flags & ts::kRunBold) == 0 && (zen->flags & ts::kRunGothic) == 0,
+        "the paragraph before stays the body face");
+
+  const char *bare =
+      "<html class=\"vrtl\"><body><p>AB</p><div class=\"m-top-1em\"><p>C</p></div><p>D</p></body></html>";
+  ts::PageLayouter plain;
+  plain.begin(opt);
+  ts::AtomSink bareSink;
+  bareSink.ctx = &plain;
+  bareSink.emit = [](void *ctx, const ts::Atom &atom, uint32_t pos) {
+    return static_cast<ts::PageLayouter *>(ctx)->feed(atom, pos) || true;
+  };
+  check(ts::htmlToAtoms(bare, std::strlen(bare), bareSink) && plain.finish(), "bare m-top html");
+  bool oneCol = plain.pageGlyphCount() > 0;
+  for (uint16_t i = 1; oneCol && i < plain.pageGlyphCount(); ++i) {
+    oneCol = plain.page()[i].x == plain.page()[0].x;
+  }
+  check(oneCol, "m-top without a side margin stays in the column");
+}
+
+void testGfontCss() {
+  char css[] =
+      "/* @import \"hidden.css\"; */\n"
+      "@import \"style-standard.css\";\n"
+      "@import url(\"style-advance.css\");\n"
+      "@import \"style-standard.css\";\n"
+      ".hltr .gfont, .vrtl .gfont { font-family: sans-serif-ja, sans-serif; }\n"
+      ".bold { font-weight: bold; }\n"
+      "html { font-family: serif-ja, serif; }\n"
+      ".vrtl .mfont { font-family: serif; }\n";
+  char hrefs[8][96]{};
+  const int nHref = ts::appendCssImports(css, std::strlen(css), hrefs, 0, 8);
+  check(nHref == 2, "a comment hides an import and a repeat is skipped");
+  check(nHref == 2 && std::strcmp(hrefs[0], "style-standard.css") == 0, "the first import is style-standard.css");
+  check(nHref == 2 && std::strcmp(hrefs[1], "style-advance.css") == 0, "url() import is kept");
+
+  ts::FaceRule rules[8]{};
+  uint16_t n = 0;
+  ts::scanFaceCss(css, std::strlen(css), rules, n);
+  bool vertSans = false;
+  bool horizSans = false;
+  bool bold = false;
+  bool htmlSerif = false;
+  bool mfont = false;
+  for (uint16_t i = 0; i < n; ++i) {
+    if (std::strcmp(rules[i].cls, "gfont") == 0 && rules[i].family == ts::kFaceSans && rules[i].mode == 2) {
+      vertSans = true;
+    }
+    if (std::strcmp(rules[i].cls, "gfont") == 0 && rules[i].family == ts::kFaceSans && rules[i].mode == 1) {
+      horizSans = true;
+    }
+    if (std::strcmp(rules[i].cls, "bold") == 0 && rules[i].weight == 2) {
+      bold = true;
+    }
+    if (std::strcmp(rules[i].tag, "html") == 0 && rules[i].family == ts::kFaceSerif) {
+      htmlSerif = true;
+    }
+    if (std::strcmp(rules[i].cls, "mfont") == 0 && rules[i].family == ts::kFaceSerif && rules[i].mode == 2) {
+      mfont = true;
+    }
+  }
+  check(vertSans && horizSans, "gfont is sans in each writing mode");
+  check(bold, ".bold is a heavier face");
+  check(htmlSerif && mfont, "serif-ja stays the body face");
+}
+
+void testAtomFace() {
+  char dir[] = "/tmp/yomu-atom-XXXXXX";
+  if (!mkdtemp(dir)) {
+    check(false, "atom face dir");
+    return;
+  }
+  ts_hal_set_root(dir);
+  ts::AtomWriter writer;
+  check(writer.open("/.yomu/face.atom"), "open face atom");
+  ts::Atom ch{};
+  ch.kind = ts::AtomKind::Ch;
+  ch.cp = 0x8A00;
+  ch.emphasis = ts::kEmphasisBold;
+  ch.family = ts::kFaceSans;
+  ts::Atom col{};
+  col.kind = ts::AtomKind::ColumnBreak;
+  col.startEm = 1;
+  col.gapBefore = 50;
+  col.gapAfter = 50;
+  check(writer.write(ch) && writer.write(col), "write face atoms");
+  writer.close();
+  ts::AtomReader reader;
+  check(reader.open("/.yomu/face.atom"), "read face atom");
+  ts::Atom a{};
+  check(reader.next(a) && a.kind == ts::AtomKind::Ch && a.cp == 0x8A00 && a.family == ts::kFaceSans &&
+            (a.emphasis & ts::kEmphasisBold) != 0,
+        "a character keeps its gothic face");
+  check(reader.next(a) && a.kind == ts::AtomKind::ColumnBreak && a.startEm == 1 && a.gapBefore == 50 &&
+            a.gapAfter == 50,
+        "a column break keeps the side gaps");
+}
+
 void testColumnPicture() {
   ts::PageLayouter lay;
   ts::LayoutOptions opt;
@@ -1373,6 +1549,9 @@ extern "C" int test_typeset_rules(void) {
   testBracketPair();
   testLayout();
   testToc();
+  testKoMidashi();
+  testGfontCss();
+  testAtomFace();
   testFace();
   testCollection();
   testColumnPicture();

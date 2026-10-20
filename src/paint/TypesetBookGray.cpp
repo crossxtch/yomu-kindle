@@ -378,6 +378,18 @@ bool TypesetBook::renderGray(uint8_t* gray, const int w, const int h, const uint
     const bool vert = !ts::runRubyAbove(g);
     const int adv = ts::runAdvance(g);
     const bool tcyRun = ts::runTcy(g) && g.rubyCount > 1;
+    FtFont* ink = &font;
+    if ((g.flags & ts::kRunGothic) != 0 && gothic.loaded()) {
+      ink = &gothic;
+    }
+    auto cpOf = [&](FtFont*& used, const uint32_t raw) -> uint32_t {
+      uint32_t cp = pickCp(*used, raw);
+      if (cp == 0 && used != &font) {
+        used = &font;
+        cp = pickCp(*used, raw);
+      }
+      return cp;
+    };
 
     if (tcyRun) {
       const int n = g.rubyCount > ts::kMaxCluster ? ts::kMaxCluster : g.rubyCount;
@@ -388,10 +400,13 @@ bool TypesetBook::renderGray(uint8_t* gray, const int w, const int h, const uint
       }
       int widths[ts::kMaxCluster]{};
       uint32_t cps[ts::kMaxCluster]{};
+      FtFont* faces[ts::kMaxCluster]{};
       int total = 0;
       for (int r = 0; r < n; ++r) {
-        cps[r] = pickCp(font, g.ruby[r]);
-        int advW = cps[r] != 0 ? font.advancePx(cps[r], size) : size;
+        FtFont* used = ink;
+        cps[r] = cpOf(used, g.ruby[r]);
+        faces[r] = used;
+        int advW = cps[r] != 0 ? used->advancePx(cps[r], size) : size;
         if (advW < 1) {
           advW = size;
         }
@@ -403,7 +418,7 @@ bool TypesetBook::renderGray(uint8_t* gray, const int w, const int h, const uint
       const bool bold = (g.flags & ts::kRunBold) != 0;
       for (int r = 0; r < n; ++r) {
         if (cps[r] != 0) {
-          font.drawGray(gray, w, h, x0, y0, widths[r], size, cps[r], size, false, bold);
+          faces[r]->drawGray(gray, w, h, x0, y0, widths[r], size, cps[r], size, false, bold);
         }
         x0 += widths[r];
       }
@@ -411,10 +426,11 @@ bool TypesetBook::renderGray(uint8_t* gray, const int w, const int h, const uint
       const int emBox = g.size > 0 ? static_cast<int>(g.size) : em;
       const int cellW = vert ? emBox : adv;
       const int cellH = vert ? adv : emBox;
-      const uint32_t cp = pickCp(font, g.cp);
+      FtFont* used = ink;
+      const uint32_t cp = cpOf(used, g.cp);
       const bool bold = (g.flags & ts::kRunBold) != 0;
       if (cp != 0 && cellW > 0 && cellH > 0) {
-        font.drawGray(gray, w, h, g.x, g.y, cellW, cellH, cp, emBox > 0 ? emBox : 1, vert, bold);
+        used->drawGray(gray, w, h, g.x, g.y, cellW, cellH, cp, emBox > 0 ? emBox : 1, vert, bold);
       }
     }
 
@@ -510,15 +526,16 @@ bool TypesetBook::renderGray(uint8_t* gray, const int w, const int h, const uint
     const int beside = g.emphasis ? body * 28 / 100 : 0;
     const int pitch = along.pitch > 0 ? along.pitch : rubyEm;
     for (uint8_t r = 0; r < g.rubyCount; ++r) {
-      const uint32_t cp = pickCp(font, g.ruby[r]);
+      FtFont* used = ink;
+      const uint32_t cp = cpOf(used, g.ruby[r]);
       if (cp == 0) {
         continue;
       }
       const int at = along.start + r * along.pitch;
       if (vert) {
-        font.drawGray(gray, w, h, g.x + body + beside, at, rubyEm, pitch, cp, rubyEm, false, false);
+        used->drawGray(gray, w, h, g.x + body + beside, at, rubyEm, pitch, cp, rubyEm, false, false);
       } else {
-        font.drawGray(gray, w, h, at, g.y - rubyEm - beside, pitch, rubyEm, cp, rubyEm, false, false);
+        used->drawGray(gray, w, h, at, g.y - rubyEm - beside, pitch, rubyEm, cp, rubyEm, false, false);
       }
     }
   }
