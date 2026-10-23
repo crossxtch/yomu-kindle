@@ -1,6 +1,7 @@
 #include <HalStorage.h>
 #include <BoardConfig.h>
 
+#include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
@@ -223,6 +224,35 @@ bool HalStorage::remove(const char *path) {
     return true;
   }
   return false;
+}
+
+bool HalStorage::removePrefix(const char *dir, const char *prefix) {
+  char mapped[512];
+  DIR *d;
+  struct dirent *ent;
+  size_t plen;
+  if (!dir || !dir[0] || !prefix || !prefix[0]) {
+    return false;
+  }
+  map_path(mapped, sizeof mapped, dir);
+  d = opendir(mapped);
+  if (!d) {
+    return errno == ENOENT;
+  }
+  plen = strlen(prefix);
+  while ((ent = readdir(d)) != NULL) {
+    char child[768];
+    int n;
+    if (strncmp(ent->d_name, prefix, plen) != 0) {
+      continue;
+    }
+    n = snprintf(child, sizeof child, "%s/%s", dir, ent->d_name);
+    if (n > 0 && (size_t)n < sizeof child) {
+      this->remove(child);
+    }
+  }
+  closedir(d);
+  return true;
 }
 
 bool HalStorage::ensureDirectoryExists(const char *path) {

@@ -36,8 +36,52 @@ static int progress_path(const char *home, char *out, size_t out_n) {
   return 0;
 }
 
-int progress_load(const char *home, const char *book_path, int *page) {
-  if (!page || !path_ok(book_path)) {
+/* Path is the last field. Two fields are page and path. Three are page, atom, path. */
+static int field_path(const char *line, size_t len, const char **path, size_t *path_len) {
+  const char *tab = memchr(line, '\t', len);
+  const char *rest;
+  size_t rest_len;
+  const char *tab2;
+  if (!tab) {
+    return 0;
+  }
+  rest = tab + 1;
+  rest_len = len - (size_t)(rest - line);
+  tab2 = memchr(rest, '\t', rest_len);
+  if (tab2) {
+    *path = tab2 + 1;
+    *path_len = len - (size_t)(*path - line);
+  } else {
+    *path = rest;
+    *path_len = rest_len;
+  }
+  return *path_len > 0;
+}
+
+static int parse_place(char *line, int *page, unsigned *atom, char **path) {
+  char *tab = strchr(line, '\t');
+  char *rest;
+  char *tab2;
+  if (!tab) {
+    return 0;
+  }
+  *tab = '\0';
+  rest = tab + 1;
+  tab2 = strchr(rest, '\t');
+  *page = atoi(line);
+  if (!tab2) {
+    *atom = 0;
+    *path = rest;
+    return 1;
+  }
+  *tab2 = '\0';
+  *atom = (unsigned)strtoul(rest, NULL, 10);
+  *path = tab2 + 1;
+  return 1;
+}
+
+int progress_load_place(const char *home, const char *book_path, int *page, unsigned *atom) {
+  if (!page || !atom || !path_ok(book_path)) {
     return -1;
   }
   char file[768];
@@ -51,19 +95,21 @@ int progress_load(const char *home, const char *book_path, int *page) {
   char line[1200];
   int found = 0;
   int value = 0;
+  unsigned where = 0;
   while (fgets(line, sizeof line, fp)) {
-    char *tab = strchr(line, '\t');
-    if (!tab) {
+    int got_page = 0;
+    unsigned got_atom = 0;
+    char *stored = NULL;
+    size_t len = strlen(line);
+    while (len > 0 && (line[len - 1] == '\n' || line[len - 1] == '\r')) {
+      line[--len] = '\0';
+    }
+    if (!parse_place(line, &got_page, &got_atom, &stored) || !stored) {
       continue;
     }
-    *tab = '\0';
-    char *stored = tab + 1;
-    size_t len = strlen(stored);
-    while (len > 0 && (stored[len - 1] == '\n' || stored[len - 1] == '\r')) {
-      stored[--len] = '\0';
-    }
     if (strcmp(stored, book_path) == 0) {
-      value = atoi(line);
+      value = got_page;
+      where = got_atom;
       found = 1;
     }
   }
@@ -72,10 +118,16 @@ int progress_load(const char *home, const char *book_path, int *page) {
     return -1;
   }
   *page = value;
+  *atom = where;
   return 0;
 }
 
-int progress_save(const char *home, const char *book_path, int page) {
+int progress_load(const char *home, const char *book_path, int *page) {
+  unsigned atom = 0;
+  return progress_load_place(home, book_path, page, &atom);
+}
+
+int progress_save_place(const char *home, const char *book_path, int page, unsigned atom) {
   if (!path_ok(book_path) || page < 0) {
     return -1;
   }
@@ -123,8 +175,10 @@ int progress_save(const char *home, const char *book_path, int page) {
       char *tab = memchr(cursor, '\t', len);
       int skip = 0;
       if (tab) {
-        size_t path_len = len - (size_t)(tab + 1 - cursor);
-        if (path_len == strlen(book_path) && memcmp(tab + 1, book_path, path_len) == 0) {
+        const char *stored = NULL;
+        size_t path_len = 0;
+        if (field_path(cursor, len, &stored, &path_len) && path_len == strlen(book_path) &&
+            memcmp(stored, book_path, path_len) == 0) {
           skip = 1;
           replaced = 1;
         }
@@ -139,7 +193,7 @@ int progress_save(const char *home, const char *book_path, int page) {
       cursor = nl + 1;
     }
   }
-  fprintf(out, "%d\t%s\n", page, book_path);
+  fprintf(out, "%d\t%u\t%s\n", page, atom, book_path);
   (void)replaced;
   if (fflush(out) != 0 || fsync(fileno(out)) != 0) {
     fclose(out);
@@ -154,4 +208,8 @@ int progress_save(const char *home, const char *book_path, int page) {
     return -1;
   }
   return 0;
+}
+
+int progress_save(const char *home, const char *book_path, int page) {
+  return progress_save_place(home, book_path, page, 0);
 }

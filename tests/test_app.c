@@ -119,6 +119,28 @@ static void test_progress_and_scan(void) {
   expect(progress_load(dir, book_path, &page) == 0 && page == 0, "load progress");
   expect(progress_save(dir, book_path, 4) == 0, "update progress");
   expect(progress_load(dir, book_path, &page) == 0 && page == 4, "updated page");
+  unsigned atom = 1;
+  expect(progress_save_place(dir, book_path, 4, 840245u) == 0, "save place");
+  expect(progress_load(dir, book_path, &page) == 0 && page == 4, "place keeps the page");
+  expect(progress_load_place(dir, book_path, &page, &atom) == 0 && page == 4 && atom == 840245u,
+         "place keeps the atom");
+  expect(progress_save(dir, book_path, 7) == 0, "page save replaces the place");
+  expect(progress_load_place(dir, book_path, &page, &atom) == 0 && page == 7 && atom == 0,
+         "page save clears the atom");
+  {
+    char prog[256];
+    FILE *old = NULL;
+    snprintf(prog, sizeof prog, "%s/progress.tsv", dir);
+    old = fopen(prog, "w");
+    expect(old != NULL, "old progress line");
+    if (old) {
+      fprintf(old, "3\t%s\n", book_path);
+      fclose(old);
+      atom = 1;
+      expect(progress_load_place(dir, book_path, &page, &atom) == 0 && page == 3 && atom == 0,
+             "old progress line has no atom");
+    }
+  }
 
   remove(book_path);
   remove(bitmap_path);
@@ -3145,9 +3167,198 @@ static void test_library_clock(void) {
   free(narrow);
 }
 
+static int find_page_index(const char *home, char *out, size_t out_n) {
+  char dir[768];
+  DIR *d;
+  struct dirent *ent;
+  int n = snprintf(dir, sizeof dir, "%s/ts", home);
+  if (n < 0 || (size_t)n >= sizeof dir) {
+    return -1;
+  }
+  d = opendir(dir);
+  if (!d) {
+    return -1;
+  }
+  while ((ent = readdir(d)) != NULL) {
+    size_t len = strlen(ent->d_name);
+    int w;
+    if (len <= 6 || strncmp(ent->d_name, "t_", 2) != 0 || strcmp(ent->d_name + len - 4, ".bin") != 0) {
+      continue;
+    }
+    w = snprintf(out, out_n, "%s/%s", dir, ent->d_name);
+    closedir(d);
+    return w > 0 && (size_t)w < out_n ? 0 : -1;
+  }
+  closedir(d);
+  return -1;
+}
+
+static int index_first_off(const char *path, uint32_t *off) {
+  FILE *fp = fopen(path, "rb");
+  unsigned char mag[4];
+  unsigned char b[4];
+  long base;
+  if (!fp) {
+    return -1;
+  }
+  if (fread(mag, 1, 4, fp) != 4) {
+    fclose(fp);
+    return -1;
+  }
+  if (mag[0] == 'T' && mag[1] == 'I' && mag[2] == 'D' && mag[3] == 'A') {
+    base = 24;
+  } else if (mag[0] == 'T' && mag[1] == 'I' && mag[2] == 'D' && mag[3] == 'B') {
+    base = 48;
+  } else {
+    fclose(fp);
+    return -1;
+  }
+  if (fseek(fp, base, SEEK_SET) != 0 || fread(b, 1, 4, fp) != 4) {
+    fclose(fp);
+    return -1;
+  }
+  *off = (uint32_t)b[0] | ((uint32_t)b[1] << 8) | ((uint32_t)b[2] << 16) | ((uint32_t)b[3] << 24);
+  fclose(fp);
+  return 0;
+}
+
+static int file_last_byte(const char *path, int *out) {
+  FILE *fp = fopen(path, "rb");
+  int c;
+  if (!fp) {
+    return -1;
+  }
+  if (fseek(fp, -1, SEEK_END) != 0) {
+    fclose(fp);
+    return -1;
+  }
+  c = fgetc(fp);
+  fclose(fp);
+  if (c < 0) {
+    return -1;
+  }
+  *out = c;
+  return 0;
+}
+
+/* A saved page number is the previous face's page. The atom is the text. */
+static void test_resume_atom(void) {
+  char dir[] = "/tmp/yomu-place-XXXXXX";
+  char book_path[256];
+  char index_path[768];
+  TsBook *book;
+  unsigned atom = 0;
+  uint32_t off = 0;
+  int last = 0;
+  int steps = 0;
+  uint8_t *page = NULL;
+  const int w = 120;
+  const int h = 80;
+  expect(mkdtemp(dir) != NULL, "place dir");
+  snprintf(book_path, sizeof book_path, "%s/Place.txt", dir);
+  expect(write_repeat(book_path, 8) == 0, "place book");
+  book = ts_open(book_path, dir, NULL, w, h);
+  expect(book != NULL, ts_error(NULL));
+  if (!book) {
+    remove(book_path);
+    rmdir(dir);
+    return;
+  }
+  while (!ts_done(book) && steps < 80) {
+    if (!ts_index_step(book) && !ts_done(book)) {
+      break;
+    }
+    steps++;
+  }
+  expect(ts_done(book) == 1, "place book finishes");
+  expect(ts_pages(book) >= 4, "place book has pages");
+  atom = ts_page_atom(book, 2);
+  expect(atom >= 4 && atom != ts_page_atom(book, 0), "later page has its own atom");
+  expect(progress_save_place(dir, book_path, 0, atom) == 0, "save the atom as page 0");
+  ts_close(book);
+  expect(find_page_index(dir, index_path, sizeof index_path) == 0, "page index");
+  {
+    FILE *fp = fopen(index_path, "ab");
+    expect(fp != NULL && fputc(0xA5, fp) != EOF, "mark the index");
+    if (fp) {
+      fclose(fp);
+    }
+  }
+  book = ts_open(book_path, dir, NULL, w, h);
+  expect(book != NULL, ts_error(NULL));
+  expect(book && ts_show_at(book) == 2, "reopen shows the saved atom");
+  expect(book && ts_page_atom(book, ts_show_at(book)) == atom, "shown page starts at the saved atom");
+  expect(file_last_byte(index_path, &last) == 0 && last == 0xA5, "an aligned index is kept");
+  if (book) {
+    ts_close(book);
+  }
+
+  expect(index_first_off(index_path, &off) == 0 && off == 4, "first page starts at the first atom");
+  {
+    FILE *fp = fopen(index_path, "rb+");
+    unsigned char mag[4];
+    unsigned char b[4];
+    long base = 24;
+    expect(fp != NULL, "open index to shift it");
+    if (fp) {
+      if (fread(mag, 1, 4, fp) == 4 && mag[3] == 'B') {
+        base = 48;
+      }
+      /* The third page is a real record. Two bytes later is still inside that atom. */
+      expect(fseek(fp, base + 14, SEEK_SET) == 0 && fread(b, 1, 4, fp) == 4, "read a middle offset");
+      b[0] = (unsigned char)(b[0] + 2);
+      expect(fseek(fp, base + 14, SEEK_SET) == 0 && fwrite(b, 1, 4, fp) == 4, "shift a middle offset");
+      fclose(fp);
+    }
+  }
+  book = ts_open(book_path, dir, NULL, w, h);
+  expect(book != NULL, ts_error(NULL));
+  page = malloc((size_t)w * (size_t)h);
+  expect(page != NULL, "place page");
+  if (book && page) {
+    memset(page, 255, (size_t)w * (size_t)h);
+    expect(ts_render(book, 0, page, w, h) == 1, "rebuilt page renders");
+    expect(ink_count(page, w * h) > 8, "rebuilt page has ink");
+  }
+  free(page);
+  if (book) {
+    ts_close(book);
+  }
+  expect(find_page_index(dir, index_path, sizeof index_path) == 0, "rebuilt index");
+  expect(index_first_off(index_path, &off) == 0 && off == 4, "a shifted index is rebuilt");
+
+  remove(book_path);
+  {
+    char ts[768];
+    DIR *d;
+    struct dirent *ent;
+    snprintf(ts, sizeof ts, "%s/ts", dir);
+    d = opendir(ts);
+    if (d) {
+      while ((ent = readdir(d)) != NULL) {
+        char child[1024];
+        if (ent->d_name[0] == '.') {
+          continue;
+        }
+        snprintf(child, sizeof child, "%s/%s", ts, ent->d_name);
+        remove(child);
+      }
+      closedir(d);
+      rmdir(ts);
+    }
+  }
+  {
+    char prog[256];
+    snprintf(prog, sizeof prog, "%s/progress.tsv", dir);
+    remove(prog);
+  }
+  rmdir(dir);
+}
+
 int main(void) {
   test_rotate();
   test_progress_and_scan();
+  test_resume_atom();
   test_japanese();
   test_typeset();
   test_mobi();

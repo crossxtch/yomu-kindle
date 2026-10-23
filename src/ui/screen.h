@@ -121,6 +121,8 @@ int reading_chapter(const State *st, int index, char *name, size_t name_n, int *
 /* Typeset up to this chapter. page is 0-based. 1 on success. */
 int reading_open_chapter(State *st, int index, int *page);
 void reading_drop_pages(State *st);
+/* Store the open page and the atom it starts at. */
+void reading_save(State *st);
 void prefetch_next_page(State *st);
 void paint_reader(State *st, int *full, int *rx, int *ry, int *rw, int *rh);
 /* Status while the saved page is still being reached. done/total are spine items.

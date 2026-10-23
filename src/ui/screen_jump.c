@@ -3,7 +3,6 @@
 #include "screen.h"
 
 #include "draw.h"
-#include "progress.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -110,7 +109,7 @@ static int jump_go(State *st) {
   st->page = page - 1;
   st->since_full = 0;
   st->screen = SCR_READ;
-  progress_save(st->host->home, st->book_path, st->page);
+  reading_save(st);
   return 1;
 }
 

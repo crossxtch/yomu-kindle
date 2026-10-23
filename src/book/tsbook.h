@@ -39,6 +39,10 @@ int ts_spine(const TsBook *book, int *done, int *total);
 int ts_index_step(TsBook *book);
 /* 1 on success. global_page is 0-based. */
 int ts_render(TsBook *book, int global_page, uint8_t *gray, int w, int h);
+/* 0-based page open() selected. A saved atom wins over the saved page number. */
+int ts_show_at(const TsBook *book);
+/* Atom-file offset of a page, or 0 when that page is not in the index. */
+unsigned ts_page_atom(const TsBook *book, int page);
 
 int ts_chapter_count(TsBook *book);
 /* name may be NULL. start and end are 0-based and inclusive.

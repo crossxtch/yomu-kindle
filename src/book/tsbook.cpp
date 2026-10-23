@@ -68,6 +68,7 @@ extern "C" TsBook *ts_open_progress(const char *path, const char *home, const ch
   int nc = 0;
   int i;
   int resume = 0;
+  unsigned place_atom = 0;
   int saved_slot = -1;
   const char *fail = "font missing";
   int explicit_font;
@@ -99,8 +100,9 @@ extern "C" TsBook *ts_open_progress(const char *path, const char *home, const ch
   ts_hal_set_root(home);
   ts_board_set(w, h);
   ts_font_set_em(type_em(w, h));
-  if (progress_load(home, path, &resume) != 0 || resume < 0) {
+  if (progress_load_place(home, path, &resume, &place_atom) != 0 || resume < 0) {
     resume = 0;
+    place_atom = 0;
   }
 
   ts = new (std::nothrow) TsBook();
@@ -116,7 +118,7 @@ extern "C" TsBook *ts_open_progress(const char *path, const char *home, const ch
     }
     const int face_index = i == saved_slot ? type_face_index() : -1;
     if (ts->book.open(path, progress ? spine_progress : nullptr, progress ? ts : nullptr, cands[i],
-                      static_cast<uint32_t>(resume), 0, face_index)) {
+                      static_cast<uint32_t>(resume), place_atom, face_index)) {
       g_ts_error[0] = '\0';
       return ts;
     }
@@ -166,6 +168,27 @@ extern "C" int ts_render(TsBook *book, int global_page, uint8_t *gray, int w, in
     return 0;
   }
   return book->book.renderGray(gray, w, h, static_cast<uint32_t>(global_page)) ? 1 : 0;
+}
+
+extern "C" int ts_show_at(const TsBook *book) {
+  if (!book || !book->book.isOpen()) {
+    return 0;
+  }
+  const uint32_t page = book->book.showAt();
+  return page > 2147483647u ? 2147483647 : static_cast<int>(page);
+}
+
+extern "C" unsigned ts_page_atom(const TsBook *book, int page) {
+  if (!book || !book->book.isOpen() || page < 0) {
+    return 0;
+  }
+  const uint32_t front = book->book.pagesBefore();
+  const uint32_t span = book->book.indexedSpan();
+  if (static_cast<uint32_t>(page) < front || static_cast<uint32_t>(page) >= front + span) {
+    return 0;
+  }
+  const uint32_t atom = book->book.atomForPage(static_cast<uint32_t>(page));
+  return atom >= 4 ? atom : 0;
 }
 
 extern "C" int ts_chapter_count(TsBook *book) {

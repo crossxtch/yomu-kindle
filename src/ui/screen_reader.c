@@ -79,9 +79,22 @@ static const char *open_failure(const char *err) {
   return "open";
 }
 
+void reading_save(State *st) {
+  unsigned atom = 0;
+  int page;
+  if (!st || !st->book_path[0]) {
+    return;
+  }
+  page = st->page < 0 ? 0 : st->page;
+  if (st->ts) {
+    atom = ts_page_atom(st->ts, page);
+  }
+  progress_save_place(st->host->home, st->book_path, page, atom);
+}
+
 static void release_open(State *st) {
   if (st->ts) {
-    progress_save(st->host->home, st->book_path, st->page);
+    reading_save(st);
   }
   if (st->ts) {
     ts_close(st->ts);
@@ -135,10 +148,19 @@ int open_book(State *st, const char *path) {
   }
   st->ts = ts;
   snprintf(st->book_path, sizeof st->book_path, "%s", path);
-  int page = 0;
   int pages = ts_pages(ts);
-  if (progress_load(st->host->home, path, &page) != 0 || page < 0) {
+  int page = 0;
+  unsigned atom = 0;
+  /* A saved atom is the text. The page number belongs to the previous face. */
+  if (progress_load_place(st->host->home, path, &page, &atom) != 0 || page < 0) {
     page = 0;
+    atom = 0;
+  }
+  if (atom >= 4) {
+    page = ts_show_at(ts);
+    if (page < 0) {
+      page = 0;
+    }
   }
   if (ts_done(ts) && pages > 0 && page >= pages) {
     page = pages - 1;
@@ -477,7 +499,7 @@ static int turn_page(State *st, int delta) {
     }
   }
   st->page = next;
-  progress_save(st->host->home, st->book_path, st->page);
+  reading_save(st);
   return 1;
 }
 
