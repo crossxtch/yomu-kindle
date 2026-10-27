@@ -47,6 +47,7 @@ typedef struct Dev {
   int grabbed;
   int sx, sy, cx, cy;
   char name[64];
+  int64_t down_ms;
 } Dev;
 
 struct KindleInput {
@@ -232,8 +233,25 @@ static void to_screen(const KindleInput *input, const Dev *dev, int raw_x, int r
   *sy = ly;
 }
 
+static void begin_contact(Dev *dev) {
+  if (!dev->down) {
+    dev->down_ms = mono_ms();
+  }
+  dev->down = 1;
+  dev->need_origin = 1;
+}
+
 static int finish_gesture(KindleInput *input, Dev *dev, AppEvent *event) {
   int x0, y0, x1, y1;
+  int ms = 0;
+  int64_t now = mono_ms();
+  if (now > 0 && dev->down_ms > 0 && now >= dev->down_ms) {
+    int64_t span = now - dev->down_ms;
+    if (span > 1000000) {
+      span = 1000000;
+    }
+    ms = (int)span;
+  }
   to_screen(input, dev, dev->sx, dev->sy, &x0, &y0);
   to_screen(input, dev, dev->cx, dev->cy, &x1, &y1);
   int dx = x1 - x0;
@@ -241,10 +259,12 @@ static int finish_gesture(KindleInput *input, Dev *dev, AppEvent *event) {
   int adx = dx < 0 ? -dx : dx;
   int ady = dy < 0 ? -dy : dy;
   dev->down = 0;
+  dev->down_ms = 0;
   event->x0 = x0;
   event->y0 = y0;
   event->x = x1;
   event->y = y1;
+  event->ms = ms;
   if (adx < input->thresh && ady < input->thresh) {
     event->kind = EV_TAP;
     return 1;
@@ -266,6 +286,7 @@ static int handle_event(KindleInput *input, Dev *dev, const struct KoEvent *raw,
     }
     dev->down = 0;
     dev->need_origin = 0;
+    dev->down_ms = 0;
     return 0;
   }
   if (raw->type == EV_KEY) {
@@ -296,8 +317,7 @@ static int handle_event(KindleInput *input, Dev *dev, const struct KoEvent *raw,
     }
     if (raw->code == BTN_TOUCH) {
       if (raw->value) {
-        dev->down = 1;
-        dev->need_origin = 1;
+        begin_contact(dev);
       } else if (dev->down) {
         return finish_gesture(input, dev, event);
       }
@@ -332,8 +352,7 @@ static int handle_event(KindleInput *input, Dev *dev, const struct KoEvent *raw,
       return finish_gesture(input, dev, event);
     }
     if (raw->value >= 0) {
-      dev->down = 1;
-      dev->need_origin = 1;
+      begin_contact(dev);
     }
   }
   return 0;
@@ -517,6 +536,7 @@ static void drop_gestures(KindleInput *input) {
   for (i = 0; i < input->ndevs; i++) {
     input->devs[i].down = 0;
     input->devs[i].need_origin = 0;
+    input->devs[i].down_ms = 0;
   }
 }
 

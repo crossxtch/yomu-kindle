@@ -33,6 +33,7 @@ typedef struct AppEvent {
   int y;
   int x0; /* press point */
   int y0;
+  int ms; /* how long the finger was down; 0 is a quick tap */
 } AppEvent;
 
 typedef struct AppHost {

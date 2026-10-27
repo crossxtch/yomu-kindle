@@ -337,33 +337,49 @@ static int reader_poll(AppHost *host, AppEvent *event) {
       return 1;
     case 6:
       expect(page_match(g_page1, host) && have && page == 1, "second tap goes forward again");
+      event->kind = EV_TAP;
+      event->ms = 1000;
+      return 1;
+    case 7:
+      expect(page_match(g_page1, host) && have && page == 1, "a long tap stays on the page");
+      event->kind = EV_SWIPE_UP;
+      event->y0 = host->h - 1;
+      event->ms = 5000;
+      return 1;
+    case 8:
+      expect(page_match(g_page0, host), "a slow bottom swipe shows the previous page");
+      expect(have && page == 0, "a slow bottom swipe saves the previous page");
+      event->kind = EV_TAP;
+      return 1;
+    case 9:
+      expect(page_match(g_page1, host) && have && page == 1, "a tap after the slow swipe goes forward");
       event->kind = EV_SWIPE_DOWN;
       event->y0 = 0;
       return 1;
-    case 7:
+    case 10:
       expect(have && page == 1, "menu keeps the current page");
       expect(!page_match(g_page1, host), "menu covers the page");
       event->kind = EV_BACK;
       return 1;
-    case 8:
+    case 11:
       expect(page_match(g_page1, host), "back from the menu returns to the page");
       expect(have && page == 1, "menu did not turn the page");
       event->kind = EV_SWIPE_DOWN;
       event->y0 = 0;
       return 1;
-    case 9:
-      event->kind = EV_DOWN;
-      return 1;
-    case 10:
-      event->kind = EV_DOWN;
-      return 1;
-    case 11:
-      event->kind = EV_DOWN;
-      return 1;
     case 12:
-      event->kind = EV_CONFIRM;
+      event->kind = EV_DOWN;
       return 1;
     case 13:
+      event->kind = EV_DOWN;
+      return 1;
+    case 14:
+      event->kind = EV_DOWN;
+      return 1;
+    case 15:
+      event->kind = EV_CONFIRM;
+      return 1;
+    case 16:
       expect(!page_match(g_page1, host), "the last menu row stays in yomu");
       event->kind = EV_QUIT;
       return -1;
@@ -407,7 +423,7 @@ static void test_reader_gestures(void) {
   g_reader_step = 0;
   g_reader_path = book_path;
   expect(app_run(&host, book_path) == 0, "gesture run");
-  expect(g_reader_step == 14, "reader menu has no exit row");
+  expect(g_reader_step == 17, "reader menu has no exit row");
   free(gray);
   free(g_page0);
   free(g_page1);

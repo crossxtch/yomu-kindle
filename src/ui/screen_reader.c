@@ -510,6 +510,9 @@ static int leave_reader(State *st) {
   return 1;
 }
 
+/* A forward tap. A contact held longer than this stays on the page. */
+#define TAP_MS 300
+
 int handle_reader(State *st, const AppEvent *ev) {
   if (!reading_open(st)) {
     st->screen = SCR_LIB;
@@ -519,6 +522,9 @@ int handle_reader(State *st, const AppEvent *ev) {
   int edge = edge_band(st->host->h);
   switch (ev->kind) {
     case EV_TAP:
+      if (ev->ms > TAP_MS) {
+        return 0;
+      }
       return turn_page(st, 1);
     case EV_SWIPE_DOWN:
       if (ev->y0 < edge) {
