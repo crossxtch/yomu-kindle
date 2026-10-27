@@ -293,10 +293,15 @@ int yomu_font_open(void) {
       "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
       "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
       "/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf",
+      "/system/fonts/NotoSansCJKjp-Regular.otf",
+      "/system/fonts/NotoSansCJK-Regular.ttc",
+      "/system/fonts/NotoSansJP-Regular.otf",
+      "/system/fonts/DroidSansFallbackFull.ttf",
+      "/system/fonts/DroidSansFallback.ttf",
       NULL};
   static const char *dirs[] = {
       "/var/local/font/mnt/ja_font/fonts", "/usr/java/lib/fonts", "/mnt/us/fonts",
-      "/opt/amazon/ebook/fonts", NULL};
+      "/opt/amazon/ebook/fonts", "/system/fonts", NULL};
   const char *env;
   int i;
   if (g_tried) {

@@ -62,6 +62,14 @@ extern "C" TsBook *ts_open_progress(const char *path, const char *home, const ch
       "/Library/Fonts/Arial Unicode.ttf",
       "/System/Library/Fonts/Hiragino Sans GB.ttc",
       "/usr/share/fonts/opentype/noto/NotoSerifCJK-Regular.ttc",
+      "/system/fonts/NotoSerifCJKjp-Regular.otf",
+      "/system/fonts/NotoSerifCJK-Regular.ttc",
+      "/system/fonts/NotoSerifJP-Regular.otf",
+      "/system/fonts/DFHEI5-SONY.ttf",
+      "/system/fonts/SSTJpPro-Regular.otf",
+      "/system/fonts/MTLmr3m.ttf",
+      "/system/fonts/DroidSansFallbackFull.ttf",
+      "/system/fonts/DroidSansFallback.ttf",
       NULL,
   };
   const char *cands[24];

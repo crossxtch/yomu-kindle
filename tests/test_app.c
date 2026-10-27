@@ -1856,6 +1856,27 @@ static void test_font_faces(void) {
     unlink(link);
     rmdir(fonts);
   }
+  {
+    const char *latin = "/System/Library/Fonts/Helvetica.ttc";
+    int base;
+    snprintf(fonts, sizeof fonts, "%s/fonts", dir);
+    snprintf(link, sizeof link, "%s/Helvetica.ttc", fonts);
+    rmdir(fonts);
+    base = type_faces(dir, faces, TYPE_FACE_MAX);
+    expect(type_faces(dir, faces, TYPE_FACE_MAX) == base, "face list stays while font dirs are unchanged");
+    if (access(latin, R_OK) == 0 && mkdir(fonts, 0755) == 0 && symlink(latin, link) == 0) {
+      int hits = 0;
+      n = type_faces(dir, faces, TYPE_FACE_MAX);
+      for (i = 0; i < n; i++) {
+        if (strcmp(faces[i].path, link) == 0) {
+          hits++;
+        }
+      }
+      expect(hits == 0 && n == base, "a latin face stays off the list");
+      unlink(link);
+      rmdir(fonts);
+    }
+  }
   snprintf(file, sizeof file, "%s/type.txt", dir);
   remove(file);
   type_load(NULL);

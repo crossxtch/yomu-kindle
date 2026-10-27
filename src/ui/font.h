@@ -5,6 +5,7 @@
 
 /* Maps a Japanese TrueType face that is already on the machine.
  * On a Kindle that is Gothic, then Mincho, then the Japanese font pack.
+ * On Android the same search continues through /system/fonts.
  * YOMU_FONT overrides the path. Returns 1 when
  * the face has hiragana and a CJK ideograph.
  */

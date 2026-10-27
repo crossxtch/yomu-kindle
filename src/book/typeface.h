@@ -8,7 +8,7 @@
 extern "C" {
 #endif
 
-enum { TYPE_STEP_MIN = -3, TYPE_STEP_MAX = 3, TYPE_FACE_MAX = 24 };
+enum { TYPE_STEP_MIN = -3, TYPE_STEP_MAX = 3, TYPE_FACE_MAX = 48 };
 
 typedef struct TypeFace {
   char path[512];
@@ -34,7 +34,7 @@ int type_set_step(int step);
 /* index is the face inside a collection. An empty path clears the saved face. */
 int type_set_font(const char *path, int index);
 
-/* Rows are faces that exist. There is no empty "標準" row. */
+/* Faces in the device font directories that have kana and kanji. There is no empty "標準" row. */
 int type_faces(const char *home, TypeFace *out, int cap);
 /* Row of the face the open book uses. 0 when the list is empty or the file is not listed. */
 int type_used_row(const TypeFace *faces, int n);

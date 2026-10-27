@@ -211,6 +211,14 @@ bool TypesetBook::loadFont(const char* fontPath, const int faceIndex) {
       "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
       "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
       "/mnt/us/koreader/fonts/noto/NotoSansCJK-Regular.ttf",
+      "/system/fonts/NotoSansCJKjp-Regular.otf",
+      "/system/fonts/NotoSansCJK-Regular.ttc",
+      "/system/fonts/NotoSansJP-Regular.otf",
+      "/system/fonts/DFHEI5-SONY.ttf",
+      "/system/fonts/SSTJpPro-Regular.otf",
+      "/system/fonts/MTLmr3m.ttf",
+      "/system/fonts/DroidSansFallbackFull.ttf",
+      "/system/fonts/DroidSansFallback.ttf",
   };
   gothic.close();
   for (const char* path : kGothic) {

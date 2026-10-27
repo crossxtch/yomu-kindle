@@ -72,14 +72,15 @@ Tap below the menu, or 戻る, to close it and stay on the shelf.
 
 文字 offers 小 and 大 around the fitted size. The steps are 最小, 小さめ,
 やや小, 標準, やや大, 大きめ, and 最大. 標準 is the size yomu picks for
-the panel. The face list is the Japanese fonts on the device, then any
-`.ttf`, `.ttc`, `.otf`, or `.otc` in `yomu/fonts` or `/mnt/us/fonts`.
-A collection is one row for each face that has kana and kanji. The row
-in use has the mark. With no saved face that is `YOMU_FONT` when set,
-then the usual mincho faces. The path and that face's index are kept in
-`/mnt/us/yomu/type.txt`. Changing the row typesets the open
+the panel. The face list scans the device font directories and keeps every
+face that has kana and kanji, then any `.ttf`, `.ttc`, `.otf`, or `.otc`
+in `yomu/fonts` or `/mnt/us/fonts`. A collection is one row for each such
+face. The row in use has the mark. With no saved face that is `YOMU_FONT`
+when set, then the usual mincho faces. The path and that face's index are
+kept in `/mnt/us/yomu/type.txt`. Changing the row typesets the open
 book again and returns to the page. 上 and 下 move a page when the
-list is longer than the screen. Gothic stays on filenames and menus.
+list is longer than the screen. A gothic file name and Code2000 stay off
+this list. Gothic stays on filenames and menus.
 The chapter list puts the bar on the chapter that contains the open page.
 
 A chapter keeps the writing direction named on its tag or in its stylesheet.
