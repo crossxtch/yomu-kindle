@@ -1,0 +1,201 @@
+#pragma once
+
+#include "FtFont.h"
+
+#include <cstdint>
+#include <vector>
+
+#include "AtomFile.h"
+#include "ChapterInfo.h"
+#include "Epub.h"
+#include "Layout.h"
+#include "TextIr.h"
+
+// Japanese reader: EPUB, UTF-8 text, or DRM-free MOBI/AZW3. Em-grid layout, FreeType gray.
+class TypesetBook {
+ public:
+  TypesetBook() = default;
+  ~TypesetBook() { close(); }
+
+  // `resumePage` / `resumeAtom` are the saved reading position. A cold open
+  // ingests and lays out only the opening chapter; a resume lays out the chapter
+  // that contains `resumeAtom` and leaves the rest for extendAhead().
+  // faceIndex < 0 uses the first face in the file that has あ and 一.
+  bool open(const char* path, ts::EpubBook::ProgressFn progress = nullptr, void* progressCtx = nullptr,
+            const char* fontPath = nullptr, uint32_t resumePage = 0, uint32_t resumeAtom = 0, int faceIndex = -1);
+  void close();
+  bool isOpen() const { return opened; }
+  /* The book's writing mode. A vertical book turns the page from the right. */
+  bool vertical() const { return layoutOpt.mode == ts::WritingMode::VerticalRl; }
+
+  // Exact once the book is fully indexed. Until then, an estimate from the
+  // atoms and spine items already seen, never below the pages that exist.
+  uint16_t pageCount() const;
+  uint16_t indexedSpan() const { return nPages; }
+  uint16_t pagesBefore() const { return frontPages; }
+  bool buildFinished() const { return ingestDone && coversEnd && originAtom <= 4; }
+  // 0-based page open() selected. A resume atom wins over resumePage.
+  uint32_t showAt() const { return showPage; }
+  bool openedPartial() const { return partialOpen; }
+  uint32_t atomForPage(uint32_t globalPage) const;
+  uint32_t globalForAtom(uint32_t atom) const;
+  // Lay out a few pages past `globalPage`, ingesting the next spine item when
+  // the atom prefix runs out. One idle tick.
+  bool extendAhead(uint32_t globalPage, uint16_t ahead);
+  // One forward step of the rest of the book: a few pages, or the next spine
+  // item when those pages run out. 1 when more forward work remains.
+  int indexStep();
+  uint16_t spineDone() const { return nextSpine; }
+  uint16_t spineTotal() const { return spineCount; }
+  bool ensureGlobal(uint32_t globalPage, ts::EpubBook::ProgressFn progress = nullptr, void* progressCtx = nullptr);
+  bool ensureChapter(uint16_t chapterIndex, uint32_t& globalPage, ts::EpubBook::ProgressFn progress = nullptr,
+                     void* progressCtx = nullptr);
+  const char* title() const { return bookTitle; }
+  const char* path() const { return filepath; }
+  const char* lastError() const { return error; }
+
+  // Recomputes page ranges. A chapter past the indexed window stays unplaced.
+  // endKnown is set only when the next mark in atom order has a page, or when
+  // this is the last mark and the book is fully indexed.
+  const std::vector<ts::ChapterInfo>& getChapters();
+
+  /* Fill a row-major 8-bit page. 255 is white, 0 is black. `globalPage` is
+   * the page the reader shows. Layout runs ahead as the book is opened. */
+  bool renderGray(uint8_t* gray, int w, int h, uint32_t globalPage);
+  void prefetchForward(uint32_t fromPageIndex);
+
+  static bool hasBookExt(const char* path);
+
+ private:
+  static bool isPalmBook(const char* path);
+  // TIDA is a finished index: 24-byte header, then 7-byte records.
+  // TIDB keeps that header and adds a 24-byte tail so a chapter window can
+  // resume. Records then start at byte 48. Promotion back to TIDA only
+  // happens for a complete prefix that starts at the first atom.
+  // TID9 and older are rebuilt from the atoms. The Y margin changed the
+  // page breaks, and the record size is still 7 bytes.
+  static constexpr uint32_t kIndexMagic = 0x41444954u;
+  static constexpr uint32_t kIndexPartial = 0x42444954u;
+  static constexpr uint32_t kIndexPayload = 24;
+  static constexpr uint32_t kPartialPayload = 48;
+  static constexpr uint32_t kFlagIngest = 1u;
+  static constexpr uint32_t kFlagCovers = 2u;
+  static constexpr uint32_t kFlagPending = 4u;
+  static constexpr uint32_t kFlagFrozen = 8u;
+  static constexpr uint32_t kCursorMagic = 0x314E5053u;
+  static constexpr uint16_t kMaxPages = 65535;
+  static constexpr const char* kWorkIndex = "/.yomu/work.idx";
+
+  // Same size as the shelf path. A shorter copy drops the extension.
+  char filepath[1024]{};
+  char facePath[512]{};
+  char bookTitle[128]{};
+  char atomPath[64]{};
+  char picturePath[64]{};
+  const char* error = "not open";
+  FtFont font;
+  ts::AtomReader atoms;
+  ts::PageLayouter layouter;
+  ts::LayoutOptions layoutOpt{};
+  // Page records stay on the index file. A seven-volume book is tens of thousands
+  // of pages, and holding the three tables in RAM aborts in operator new.
+  mutable HalFile indexFile;
+  uint16_t nPages = 0;
+  uint8_t indexBuf[504]{};
+  uint16_t indexBufN = 0;
+  std::vector<ts::ChapterInfo> chapters;
+  struct ChapterMark {
+    uint32_t atomOff = 0xFFFFFFFFu;
+    uint16_t spine = 0xFFFFu;
+    char name[80]{};
+  };
+  std::vector<ChapterMark> chapterMarks;
+  uint32_t sourceSize = 0;
+  uint32_t bookSrcSize = 0;
+  bool opened = false;
+  bool atomsLive = false;
+  bool ingestDone = false;
+  bool coversEnd = false;
+  bool pendingPage = false;
+  bool frontFrozen = false;
+  bool extendFailed = false;
+  bool partialOpen = false;
+  bool cursorOk = false;
+  uint16_t indexBase = 24;
+  uint16_t nextSpine = 0;
+  uint16_t spineCount = 0;
+  uint16_t originSpine = 0;
+  uint16_t frontPages = 0;
+  // Writing mode to use when the next page record has not been started.
+  uint16_t runMode = 0;
+  uint32_t originAtom = 4;
+  uint32_t indexedAtom = 4;
+  uint32_t atomBytes = 0;
+  uint32_t showPage = 0;
+  bool cleanupPending = false;
+  uint32_t loadedPage = 0xFFFFFFFFu;
+  ts::GlyphRun loadedGlyphs[ts::PageLayouter::kMaxGlyphs]{};
+  uint16_t loadedCount = 0;
+  uint16_t loadedPicture = 0;
+  uint8_t* pictureBits = nullptr;  // borrowed ScratchHeap page, valid only while painting
+  // Kept for a later chapter open. Background steps do not call it.
+  ts::EpubBook::ProgressFn hookFn = nullptr;
+  void* hookCtx = nullptr;
+  // Face inside a collection. 0 keeps the page-index name used by a single face.
+  int faceIndex = 0;
+  // Gothic for a sans run. A failed load leaves the body face.
+  FtFont gothic;
+
+  bool loadFont(const char* fontPath, int faceIndex);
+  void releaseFaceFile();
+  void releaseFaceMaps();
+  bool reopenFaceFile();
+  bool reopenFaceMaps();
+  enum class IndexStep { Ok, NeedAtoms, Done, Error };
+
+  bool ingestTxt();
+  bool ingestEpub(ts::EpubBook::ProgressFn progress, void* progressCtx);
+  bool ingestSlice(uint16_t maxSpines, ts::EpubBook::ProgressFn progress, void* progressCtx);
+  bool loadIndex();
+  bool beginRange(uint32_t origin, uint16_t spine);
+  IndexStep indexMore(uint16_t budget, uint32_t stopAtom);
+  bool indexUntil(uint32_t target, ts::EpubBook::ProgressFn progress, void* progressCtx);
+  bool prependOne();
+  bool suspendIndex();
+  bool promoteIndex();
+  bool writePartialHeader();
+  bool pageCovers(uint32_t atom) const;
+  void freezeFront();
+  template <typename Book>
+  void mergeAnyToc(const Book& book);
+  bool loadCursor();
+  bool saveCursor() const;
+  void cursorPath(char* out, size_t outSize) const;
+  bool peekAtom(uint32_t globalPage, uint32_t& atom) const;
+  void dropPartialCache();
+  void forgetFaceIndexes();
+  bool atomOffsetOk(uint32_t off) const;
+  /* True when reading atoms from `from` lands on `to`. A shifted offset can
+   * still parse as a character, so a single record is not enough. */
+  bool pageSpanAligns(uint32_t from, uint32_t to) const;
+  bool indexRecordsAlign() const;
+  bool discardIndex(const char* path, bool ingest, uint16_t next, uint16_t spines, uint16_t mode,
+                    ts::WritingMode layoutMode);
+  bool reopenAtoms();
+  bool reopenIndex();
+  uint32_t localOf(uint32_t globalPage) const;
+  bool finishIndex();
+  bool flushIndex();
+  bool appendPage(uint32_t off, uint8_t mode, uint16_t pic);
+  bool setLastPicture(uint16_t pic);
+  bool readPage(uint32_t index, uint32_t& off, uint8_t& mode, uint16_t& pic) const;
+  /* Fill in-memory size fields. Masks the force-page bit out of cp. */
+  void preparePicture(ts::Atom& atom) const;
+  bool atomCacheFresh() const;
+  bool layoutPage(uint32_t pageIndex);
+  void indexPath(char* out, size_t outSize) const;
+  void chapterPath(char* out, size_t outSize) const;
+  bool saveChapterSidecar() const;
+  bool loadChapterSidecar();
+  void applyChapters();
+};

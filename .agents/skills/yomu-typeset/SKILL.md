@@ -2,7 +2,7 @@
 name: yomu-typeset
 description: >
   Constraints for yomu's Japanese typesetter.
-  Use when editing the sibling typeset repo, src/paint, atom or page-index files, face CSS, FreeType collection faces, or the host typeset tests, or when the user runs /yomu-typeset.
+  Use when editing src/typeset, src/paint, atom or page-index files, face CSS, FreeType collection faces, or the host typeset tests, or when the user runs /yomu-typeset.
 ---
 
 # Typesetter
@@ -11,9 +11,9 @@ Follow the struct, rebuild, and face-list rules in `AGENTS.md`.
 
 ## Cache magics
 
-Atom files are IRAF, `kAtomMagic` `0x46415249` in `../typeset/src/AtomFile.h`. A mismatch rebuilds the file. Character, group, and 縦中横 records store a 囲み罫 id after `startEm`, then a background gray, then the CSS border width in px, then an em width as a percent of the em, a rem flag, a side mask, and a family byte. 0 is none. Gray 0 is no fill. A value of 2 or more is the 8-bit gray, and black is stored as 2. A px width of 0 keeps the em thickness. A positive em width is that percent; the rem flag uses the body em. A side mask of 0 draws every side. Family 0 is the body face and 2 is gothic. A column break stores the 行頭 em, then a before-gap percent and an after-gap percent. The page index does not store these.
+Atom files are IRAF, `kAtomMagic` `0x46415249` in `src/typeset/AtomFile.h`. A mismatch rebuilds the file. Character, group, and 縦中横 records store a 囲み罫 id after `startEm`, then a background gray, then the CSS border width in px, then an em width as a percent of the em, a rem flag, a side mask, and a family byte. 0 is none. Gray 0 is no fill. A value of 2 or more is the 8-bit gray, and black is stored as 2. A px width of 0 keeps the em thickness. A positive em width is that percent; the rem flag uses the body em. A side mask of 0 draws every side. Family 0 is the body face and 2 is gothic. A column break stores the 行頭 em, then a before-gap percent and an after-gap percent. The page index does not store these.
 KF8 plan files are MRP6, `MobiBook::kPlanMagic`. Each stylesheet flow is scanned on its own and the plan stores those face rules, including an em width, a partial-border mask, a family, and a writing-mode guard. Family 0 inherits, 1 is serif, and 2 is sans. Mode 0 is any chapter, 1 is horizontal, and 2 is vertical. The PalmDOC text length is only the first FDST flow. Unpack through the last flow. An older plan rebuilds the atoms of that `.mobi`, `.azw3`, or `.azw`.
-yomu's `TypesetBook` is `../typeset/book/TypesetBook.h`. The X4 Classic class is `../yomu-mini/lib/Book/TypesetBook.h`.
+yomu's `TypesetBook` is `src/typeset/book/TypesetBook.h`. The X4 Classic class is `../yomu-mini/lib/Book/TypesetBook.h`.
 A book path is stored in 1024 bytes, the same size as the shelf path in `src/ui/screen.h`. `ZipArchive` keeps that copy so it can reopen the file. A longer path fails open with `path long`.
 `pageCount()` returns the pages indexed so far, clamped at 65535.
 A finished page index is TIDA, `TypesetBook::kIndexMagic` `0x41444954`. A partial index is TIDB, `kIndexPartial` `0x42444954`. An older index magic is rebuilt because the column length changed. The record size stays 7 bytes. Reading atoms from one page record must land on the next. A shifted offset can still parse as a character, and the first, middle, and last records can be real boundaries while another page is not, so those breaks are rebuilt. The magic stays, so an aligned index is kept.
@@ -31,7 +31,7 @@ Paint bold with `FT_LOAD_NO_BITMAP`, then `FT_Outline_Embolden(&gs->outline, (FT
 
 ## Face CSS
 
-Rules live in `../typeset/src/FaceCss.cpp`. A selector is an element, a class, or both. A leading `.vrtl`, `html.vrtl`, or `.vertical-rl` keeps the subject for a vertical chapter. `.hltr`, `html.hltr`, or `.horizontal-tb` keeps it for a horizontal chapter. Any other descendant is dropped. The cap is `kMaxFaceRules` (1536). Specificity is 1 for an element, 10 for a class, and 11 for both.
+Rules live in `src/typeset/FaceCss.cpp`. A selector is an element, a class, or both. A leading `.vrtl`, `html.vrtl`, or `.vertical-rl` keeps the subject for a vertical chapter. `.hltr`, `html.hltr`, or `.horizontal-tb` keeps it for a horizontal chapter. Any other descendant is dropped. The cap is `kMaxFaceRules` (1536). Specificity is 1 for an element, 10 for a class, and 11 for both.
 Read at most `kMaxCssLinks` (8) linked sheets, each at most `kMaxCssBytes` (2MB). `@import` in a kept sheet is another sheet, still inside that cap. A comment hides an import. A `<style>` block is kept up to that size.
 `font-family` uses the first generic token. A token that starts with `sans` or `gothic` is family 2. A token that starts with `serif` is family 1. `sans-serif-ja` is sans.
 `weight` 0 inherits, 1 is normal, and 2 is bold. `b` and `strong` are bold unless a rule says normal. An inline style wins.

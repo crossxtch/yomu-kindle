@@ -198,7 +198,8 @@ compiler.
 src/ui        screens, gestures, and menu text
 src/book      library, progress, type.txt, and the typesetter bridge
 src/paint     FreeType face, gray paint, and the POSIX file layer
-../typeset    book-to-page library (EPUB, DRM-free MOBI/AZW3, and txt to glyph runs)
+src/typeset   parser and layouter (EPUB, DRM-free MOBI/AZW3, and txt to glyph runs)
+src/typeset/book   Kindle book driver and picture page
 src/kindle    framebuffer, touch, sleep, and main
 src/net       the transfer server and the host HTTP client
 src/util      log and UTF-8
@@ -207,10 +208,10 @@ tests         host tests run by make test
 reference/koreader   notes only; it is not built or linked
 ```
 
-The book-to-page library lives in the sibling `typeset` directory. yomu
+The book-to-page library lives in `src/typeset`. yomu
 builds those sources and draws the glyph runs with FreeType. `FtFont`,
 `HalPosix`, and `TypesetBookGray` stay in `src/paint`. The MIT notice
-for the shared library is `../typeset/LICENSE`.
+is `src/typeset/LICENSE`.
 
 ## Third party
 

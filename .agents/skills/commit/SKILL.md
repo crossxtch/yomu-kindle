@@ -20,7 +20,7 @@ Read the diff before staging. Tidy that change and leave every other line alone.
 
 ## Split and commit
 
-1. In each dirty repository, read `git status`, `git diff`, and `git log`. `../typeset` is separate. Commit it first when the reader depends on the change.
+1. Read `git status`, `git diff`, and `git log` in this repository.
 2. Group hunks by change. When one file holds two changes, set the other change aside, commit the first, then restore the rest.
 3. Stage only that change and commit it. Repeat.
 4. A Kindle binary that belongs to one source change goes in that commit, after the rebuild. When several source changes share one binary, commit the sources first, rebuild, and commit `dist/kindle/yomu/yomu` alone with subject `Refresh the Kindle binary.`
