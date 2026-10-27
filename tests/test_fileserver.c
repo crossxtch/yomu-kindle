@@ -3,6 +3,7 @@
 #include "fileserver.h"
 #include "http.h"
 #include "mdns.h"
+#include "screen.h"
 
 #include <arpa/inet.h>
 #include <dirent.h>
@@ -269,6 +270,141 @@ static int xfer_poll(AppHost *host, AppEvent *event) {
   }
   event->kind = EV_QUIT;
   return -1;
+}
+
+static int listen_on(int port) {
+  int fd = socket(AF_INET, SOCK_STREAM, 0);
+  int one = 1;
+  struct sockaddr_in addr;
+  if (fd < 0) {
+    return -1;
+  }
+  setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof one);
+  memset(&addr, 0, sizeof addr);
+  addr.sin_family = AF_INET;
+  addr.sin_addr.s_addr = htonl(INADDR_ANY);
+  addr.sin_port = htons((uint16_t)port);
+  if (bind(fd, (struct sockaddr *)&addr, sizeof addr) != 0 || listen(fd, 1) != 0) {
+    close(fd);
+    return -1;
+  }
+  return fd;
+}
+
+static const int k_try_ports[] = {80, 8080, 3000, 4000, 5000};
+
+/* 80 and 8080 are held when this process can bind them. The next try is 3000. */
+static void test_xfer_falls_to_3000(void) {
+  char dir[] = "/tmp/yomu-xfer3000-XXXXXX";
+  const char *saved;
+  char kept[32];
+  int held80;
+  int held8080;
+  int probe;
+  AppHost host;
+  State st;
+  int got;
+  held80 = listen_on(80);
+  held8080 = listen_on(8080);
+  probe = listen_on(3000);
+  if (held8080 < 0 || probe < 0) {
+    if (held80 >= 0) {
+      close(held80);
+    }
+    if (held8080 >= 0) {
+      close(held8080);
+    }
+    if (probe >= 0) {
+      close(probe);
+    }
+    return;
+  }
+  close(probe);
+  expect(mkdtemp(dir) != NULL, "xfer 3000 dir");
+  if (strstr(dir, "XXXXXX")) {
+    close(held8080);
+    if (held80 >= 0) {
+      close(held80);
+    }
+    return;
+  }
+  saved = getenv("YOMU_PORT");
+  kept[0] = '\0';
+  if (saved) {
+    snprintf(kept, sizeof kept, "%s", saved);
+  }
+  unsetenv("YOMU_PORT");
+  memset(&host, 0, sizeof host);
+  host.root = dir;
+  host.home = dir;
+  memset(&st, 0, sizeof st);
+  st.host = &host;
+  expect(enter_xfer(&st) == 1, "xfer 3000 enter");
+  got = st.fs ? fileserver_port(st.fs) : 0;
+  expect(got == 3000, "xfer uses 3000 after 80 and 8080");
+  if (st.fs) {
+    fileserver_stop(st.fs);
+  }
+  close(held8080);
+  if (held80 >= 0) {
+    close(held80);
+  }
+  if (kept[0]) {
+    setenv("YOMU_PORT", kept, 1);
+  }
+  rmdir(dir);
+}
+
+/* Every preferred port this process can hold is taken, so 転送 uses another port. */
+static void test_xfer_busy_ports(void) {
+  char dir[] = "/tmp/yomu-xferbusy-XXXXXX";
+  const char *saved;
+  char kept[32];
+  int held[5];
+  int avoided;
+  AppHost host;
+  State st;
+  int got;
+  int i;
+  expect(mkdtemp(dir) != NULL, "xfer busy dir");
+  if (strstr(dir, "XXXXXX")) {
+    return;
+  }
+  for (i = 0; i < 5; i++) {
+    held[i] = listen_on(k_try_ports[i]);
+  }
+  saved = getenv("YOMU_PORT");
+  kept[0] = '\0';
+  if (saved) {
+    snprintf(kept, sizeof kept, "%s", saved);
+  }
+  unsetenv("YOMU_PORT");
+  memset(&host, 0, sizeof host);
+  host.root = dir;
+  memset(&st, 0, sizeof st);
+  st.host = &host;
+  expect(enter_xfer(&st) == 1, "xfer busy enter");
+  got = st.fs ? fileserver_port(st.fs) : 0;
+  expect(st.fs != NULL && got > 0, "xfer starts when the preferred ports are busy");
+  avoided = 1;
+  for (i = 0; i < 5; i++) {
+    if (held[i] >= 0 && got == k_try_ports[i]) {
+      avoided = 0;
+    }
+  }
+  expect(avoided, "xfer avoids a held port");
+  if (st.fs) {
+    fileserver_stop(st.fs);
+  }
+  for (i = 0; i < 5; i++) {
+    if (held[i] >= 0) {
+      close(held[i]);
+    }
+  }
+  if (kept[0]) {
+    setenv("YOMU_PORT", kept, 1);
+  }
+  rmdir(dir);
 }
 
 static void test_xfer_screen(const char *dir) {
@@ -641,6 +777,8 @@ static void test_font_upload(void) {
 }
 
 void test_fileserver(void) {
+  test_xfer_falls_to_3000();
+  test_xfer_busy_ports();
   test_font_upload();
   test_mdns();
   test_clock_offset();

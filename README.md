@@ -126,8 +126,8 @@ Progress is stored in `/mnt/us/yomu/progress.tsv`. The log is
 転送 is in the library menu. Swipe down from the top of the shelf and choose it.
 Opening it serves
 the book folder (`YOMU_ROOT`, normally `/mnt/us/yomu/books`). A browser on the same
-Wi-Fi opens `http://yomu.local/` when the server is on port 80, or
-`http://yomu.local:8080/` otherwise. The screen also shows the numeric
+Wi-Fi opens the address on the screen: `http://yomu.local/` on port 80, or
+`http://yomu.local:PORT/` otherwise. The screen also shows the numeric
 address. The page lists, uploads, downloads, renames, moves,
 and deletes files. A `.ttf`, `.ttc`, `.otf`, or `.otc` upload is stored in
 `yomu/fonts`, and the page lists that folder as `fonts`. The 文字 screen
@@ -139,8 +139,10 @@ that folder until yomu exits. Names that start with a dot are
 hidden, and so are `system`, `lost+found`, and `extensions` at the top of
 the folder.
 
-The server listens on port 80, or on 8080 if 80 is taken. `YOMU_PORT`
-picks one port and does not try the other. On the Kindle, yomu adds
+The server tries port 80, then 8080, then 3000, then 4000, then 5000. If
+every one of those is taken, it uses a free port and the screen shows that
+address. `YOMU_PORT`
+picks one port and does not try the others. On the Kindle, yomu adds
 iptables rules for that TCP port and for UDP 5353, and removes them when
 yomu exits. Connect
 Wi-Fi before opening 転送, and use **yomu** so the framework
@@ -165,7 +167,7 @@ Other switches:
 | `YOMU_ROOT` | Folder to scan and to serve. Default `/mnt/us/yomu/books`. |
 | `YOMU_FONT` | TrueType face for the Japanese UI, filenames, and chapter names. When no face is saved, the book uses this file first. Default is the Kindle Gothic, then Mincho. |
 | `YOMU_HOME` | Log and progress. Default `/mnt/us/yomu`. |
-| `YOMU_PORT` | File-transfer port. When unset, yomu tries 80 and then 8080. |
+| `YOMU_PORT` | File-transfer port. When unset, yomu tries 80, then 8080, then 3000, then 4000, then 5000, then a free port. |
 | `YOMU_FULL_EVERY` | Page turns between full refreshes. `1` flashes every page. `0` flashes only the first page and the menus. Default `20`. |
 | `YOMU_FB_INVERT` | `1` or `0`. Overrides the black/white sense of the panel. |
 | `YOMU_TOUCH_SWAP` | `1` swaps touch X and Y. Default is automatic. |

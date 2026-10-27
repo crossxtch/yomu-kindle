@@ -42,9 +42,10 @@ static void attach_fonts(State *st) {
   }
 }
 
-/* YOMU_PORT, when set, is the only port. Otherwise try 80, then 8080.
- * A running server stays up across visits. It restarts only when it has
- * no address yet, so a later Wi-Fi connection can be picked up.
+/* YOMU_PORT, when set, is the only port. Otherwise try 80, 8080, 3000,
+ * 4000, and 5000, then any free port. A running server stays up across
+ * visits. It restarts only when it has no address yet, so a later Wi-Fi
+ * connection can be picked up.
  */
 int enter_xfer(State *st) {
   st->screen = SCR_XFER;
@@ -64,24 +65,34 @@ int enter_xfer(State *st) {
   if (!root || !root[0]) {
     return 1;
   }
-  int ports[2];
+  int ports[5];
   int nports = 0;
+  int forced = 0;
   const char *env = getenv("YOMU_PORT");
   if (env && env[0]) {
     int port = 0;
+    forced = 1;
     if (parse_port(env, &port) != 0) {
       return 1;
     }
     ports[nports++] = port;
   } else {
-    ports[nports++] = 80;
-    ports[nports++] = 8080;
+    static const int preferred[] = {80, 8080, 3000, 4000, 5000};
+    for (int i = 0; i < 5; i++) {
+      ports[nports++] = preferred[i];
+    }
   }
   for (int i = 0; i < nports; i++) {
     st->fs = fileserver_start(root, ports[i]);
     if (st->fs) {
       attach_fonts(st);
-      break;
+      return 1;
+    }
+  }
+  if (!forced) {
+    st->fs = fileserver_start(root, 0);
+    if (st->fs) {
+      attach_fonts(st);
     }
   }
   return 1;

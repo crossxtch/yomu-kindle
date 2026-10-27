@@ -17,10 +17,10 @@ That orientation is fixed.
 
 Swipe down from the top of the library and choose 転送. A browser on the same Wi-Fi can upload
 and download files in yomu/books. A .ttf, .ttc, .otf, or .otc upload is stored in yomu/fonts, and the page lists that folder. Open 文字 to use the face. The screen shows http://yomu.local/
-(or http://yomu.local:8080/ when 80 is busy) and the numeric address.
+(or http://yomu.local:PORT/ when the port is not 80) and the numeric address.
 There is no password. Tap 戻る to leave the screen. The server keeps
 running until yomu exits.
-It uses port 80, or 8080 if 80 is busy. Set YOMU_PORT to force one
+It tries port 80, then 8080, then 3000, then 4000, then 5000, then a free port. Set YOMU_PORT to force one
 port. Connect Wi-Fi first, and launch yomu so Wi-Fi stays up.
 yomu no framework can drop the network.
 
