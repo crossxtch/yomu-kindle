@@ -129,7 +129,9 @@ the book folder (`YOMU_ROOT`, normally `/mnt/us/yomu/books`). A browser on the s
 Wi-Fi opens `http://yomu.local/` when the server is on port 80, or
 `http://yomu.local:8080/` otherwise. The screen also shows the numeric
 address. The page lists, uploads, downloads, renames, moves,
-and deletes files. Tap 戻る to leave the screen. The server keeps running
+and deletes files. A `.ttf`, `.ttc`, `.otf`, or `.otc` upload is stored in
+`yomu/fonts`, and the page lists that folder as `fonts`. The 文字 screen
+lists those faces. Tap 戻る to leave the screen. The server keeps running
 until yomu exits.
 
 There is no password. Anyone who can reach the Kindle can change files in

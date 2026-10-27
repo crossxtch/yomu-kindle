@@ -214,7 +214,7 @@ footer {
   <div id="dropZone">
     <div class="drop-kicker">送信</div>
     <div class="drop-title">ファイルをドロップ</div>
-    <div class="drop-sub">.epub と .txt</div>
+    <div class="drop-sub">.epub .txt .mobi .azw3、書体は .ttf .otf .ttc .otc</div>
   </div>
   <input type="file" id="fileInput" >
   <div id="uploadProgress"><span id="uploadBar"></span></div>
@@ -264,7 +264,7 @@ function resetUploadUi() {
   document.getElementById("cancelUpload").style.display = "none";
   dropZone.classList.remove("busy");
   dropZone.querySelector(".drop-title").textContent = "ファイルをドロップ";
-  dropZone.querySelector(".drop-sub").textContent = ".epub と .txt";
+  dropZone.querySelector(".drop-sub").textContent = ".epub .txt .mobi .azw3、書体は .ttf .otf .ttc .otc";
   document.getElementById("fileInput").value = "";
 }
 
@@ -428,6 +428,9 @@ function upload(file, attempt) {
     const ok = xhr.status >= 200 && xhr.status < 300;
     resetUploadUi();
     status(xhr.responseText, ok ? "ok" : "bad");
+    if (ok && xhr.responseText.indexOf("書体を追加しました") === 0) {
+      path = "/fonts";
+    }
     load();
   };
   xhr.onerror = () => {

@@ -3,6 +3,7 @@
 #include "screen.h"
 
 #include "draw.h"
+#include "log.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -29,6 +30,18 @@ static int parse_port(const char *s, int *out) {
   return 0;
 }
 
+static void attach_fonts(State *st) {
+  char dir[768];
+  int n;
+  if (!st->fs || !st->host || !st->host->home || !st->host->home[0]) {
+    return;
+  }
+  n = snprintf(dir, sizeof dir, "%s/fonts", st->host->home);
+  if (n < 0 || (size_t)n >= sizeof dir || fileserver_set_fonts(st->fs, dir) != 0) {
+    yomu_log("transfer fonts %s: refused", st->host->home);
+  }
+}
+
 /* YOMU_PORT, when set, is the only port. Otherwise try 80, then 8080.
  * A running server stays up across visits. It restarts only when it has
  * no address yet, so a later Wi-Fi connection can be picked up.
@@ -39,6 +52,7 @@ int enter_xfer(State *st) {
   if (st->fs) {
     char urls[1][80];
     if (fileserver_urls(st->fs, urls, 1) > 0) {
+      attach_fonts(st);
       return 1;
     }
     if (fileserver_stop(st->fs)) {
@@ -66,6 +80,7 @@ int enter_xfer(State *st) {
   for (int i = 0; i < nports; i++) {
     st->fs = fileserver_start(root, ports[i]);
     if (st->fs) {
+      attach_fonts(st);
       break;
     }
   }

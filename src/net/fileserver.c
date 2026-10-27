@@ -10,7 +10,11 @@
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
+#if defined(__ANDROID__) && __ANDROID_API__ < 24
+#include "android_ifaddrs.h"
+#else
 #include <ifaddrs.h>
+#endif
 #include <net/if.h>
 #include <netinet/in.h>
 #include <pthread.h>
@@ -38,6 +42,7 @@
 
 struct FileServer {
   char root[FS_PATH];
+  char fonts[FS_PATH];
   char ip[64];
   char urls[3][80];
   int nurls;
@@ -229,19 +234,66 @@ static int root_reserved(const char *s) {
   return strcmp(s, "system") == 0 || strcmp(s, "lost+found") == 0 || strcmp(s, "extensions") == 0;
 }
 
+static int root_blocked(const FileServer *fs, const char *name) {
+  if (root_reserved(name)) {
+    return 1;
+  }
+  return fs->fonts[0] && strcmp(name, "fonts") == 0;
+}
+
+static int fonts_url(const FileServer *fs, const char *url, const char **rest) {
+  if (!fs->fonts[0] || !url) {
+    return 0;
+  }
+  if (strcmp(url, "/fonts") == 0 || strcmp(url, "/fonts/") == 0) {
+    *rest = "/";
+    return 1;
+  }
+  if (strncmp(url, "/fonts/", 7) == 0) {
+    *rest = url + 6;
+    return 1;
+  }
+  return 0;
+}
+
+static int is_font_name(const char *name) {
+  size_t n;
+  if (!name) {
+    return 0;
+  }
+  n = strlen(name);
+  if (n < 4) {
+    return 0;
+  }
+  return strcasecmp(name + n - 4, ".ttf") == 0 || strcasecmp(name + n - 4, ".ttc") == 0 ||
+         strcasecmp(name + n - 4, ".otf") == 0 || strcasecmp(name + n - 4, ".otc") == 0;
+}
+
+static int is_fonts_dir(const FileServer *fs, const char *path) {
+  return fs->fonts[0] && path && strcmp(path, fs->fonts) == 0;
+}
+
 /* kind 0: any existing non-link. kind 1: existing directory. kind 2: a new or
  * existing regular file whose parent directory exists. */
 static int resolve_path(const FileServer *fs, const char *urlpath, int kind, char *out, size_t cap, int *status) {
   const char *p = urlpath && urlpath[0] ? urlpath : "/";
+  const char *base = fs->root;
+  const char *rest = NULL;
+  int books;
+  if (fonts_url(fs, p, &rest)) {
+    base = fs->fonts;
+    p = rest;
+  }
   if (p[0] != '/' || strchr(p, '\\')) {
     *status = 403;
     return -1;
   }
-  if (strlen(fs->root) + 1 >= cap) {
+  if (strlen(base) + 1 >= cap) {
     *status = 414;
     return -1;
   }
-  memcpy(out, fs->root, strlen(fs->root) + 1);
+  memcpy(out, base, strlen(base) + 1);
+  books = strcmp(base, fs->root) == 0;
   if (strcmp(p, "/") == 0) {
     if (kind == 2) {
       *status = 400;
@@ -267,7 +319,7 @@ static int resolve_path(const FileServer *fs, const char *urlpath, int kind, cha
     }
     memcpy(name, seg, n);
     name[n] = '\0';
-    if (!segment_ok(name) || (first && root_reserved(name))) {
+    if (!segment_ok(name) || (first && books && root_blocked(fs, name))) {
       *status = 403;
       return -1;
     }
@@ -634,7 +686,7 @@ static int handle_list(FileServer *fs, int fd, const Req *req) {
     if (strcmp(name, ".") == 0 || strcmp(name, "..") == 0) {
       continue;
     }
-    if (!segment_ok(name) || (at_root && root_reserved(name))) {
+    if (!segment_ok(name) || (at_root && root_blocked(fs, name))) {
       continue;
     }
     char child[FS_PATH];
@@ -654,6 +706,12 @@ static int handle_list(FileServer *fs, int fd, const Req *req) {
     n++;
   }
   closedir(dir);
+  if (at_root && fs->fonts[0] && n < LIST_MAX) {
+    snprintf(ents[n].name, sizeof ents[n].name, "fonts");
+    ents[n].is_dir = 1;
+    ents[n].size = 0;
+    n++;
+  }
   if (n > 1) {
     qsort(ents, (size_t)n, sizeof *ents, ent_cmp);
   }
@@ -846,8 +904,8 @@ static int handle_delete(FileServer *fs, int fd, const char *body) {
     }
     return reply_text(fd, 404, "Not Found", "削除できませんでした");
   }
-  if (strcmp(full, fs->root) == 0) {
-    return reply_text(fd, 403, "Forbidden", "ルートは削除できません");
+  if (strcmp(full, fs->root) == 0 || is_fonts_dir(fs, full)) {
+    return reply_text(fd, 403, "Forbidden", "このフォルダは削除できません");
   }
   struct stat st;
   if (lstat(full, &st) != 0 || S_ISLNK(st.st_mode)) {
@@ -892,7 +950,7 @@ static int handle_mkdir(FileServer *fs, int fd, const char *body) {
     return reply_text(fd, status == 403 ? 403 : 500, status == 403 ? "Forbidden" : "Internal Server Error",
                       status == 403 ? "保護されたファイルです" : "フォルダを作成できませんでした");
   }
-  if (strcmp(parent, fs->root) == 0 && root_reserved(name)) {
+  if (strcmp(parent, fs->root) == 0 && root_blocked(fs, name)) {
     return reply_text(fd, 403, "Forbidden", "保護されたファイルです");
   }
   char full[FS_PATH];
@@ -921,7 +979,7 @@ static int handle_rename(FileServer *fs, int fd, const char *body) {
     return reply_text(fd, status == 403 ? 403 : 500, status == 403 ? "Forbidden" : "Internal Server Error",
                       status == 403 ? "保護されたファイルです" : "名前を変更できませんでした");
   }
-  if (strcmp(oldp, fs->root) == 0) {
+  if (strcmp(oldp, fs->root) == 0 || is_fonts_dir(fs, oldp)) {
     return reply_text(fd, 403, "Forbidden", "保護されたファイルです");
   }
   char parent[FS_PATH];
@@ -931,7 +989,7 @@ static int handle_rename(FileServer *fs, int fd, const char *body) {
     return reply_text(fd, 500, "Internal Server Error", "名前を変更できませんでした");
   }
   *slash = '\0';
-  if (strcmp(parent, fs->root) == 0 && root_reserved(name)) {
+  if (strcmp(parent, fs->root) == 0 && root_blocked(fs, name)) {
     return reply_text(fd, 403, "Forbidden", "保護されたファイルです");
   }
   char neu[FS_PATH];
@@ -958,7 +1016,7 @@ static int handle_move(FileServer *fs, int fd, const char *body) {
     return reply_text(fd, status == 403 ? 403 : 500, status == 403 ? "Forbidden" : "Internal Server Error",
                       status == 403 ? "保護されたファイルです" : "移動できませんでした");
   }
-  if (strcmp(oldp, fs->root) == 0) {
+  if (strcmp(oldp, fs->root) == 0 || is_fonts_dir(fs, oldp)) {
     return reply_text(fd, 403, "Forbidden", "保護されたファイルです");
   }
   status = 404;
@@ -967,7 +1025,7 @@ static int handle_move(FileServer *fs, int fd, const char *body) {
   }
   const char *base = strrchr(oldp, '/');
   base = base ? base + 1 : oldp;
-  if (strcmp(dest, fs->root) == 0 && root_reserved(base)) {
+  if (strcmp(dest, fs->root) == 0 && root_blocked(fs, base)) {
     return reply_text(fd, 403, "Forbidden", "保護されたファイルです");
   }
   char neu[FS_PATH];
@@ -1000,14 +1058,24 @@ static int handle_upload(FileServer *fs, int fd, Req *req) {
   const char *folder = req->file_path[0] ? req->file_path : "/";
   char parent[FS_PATH];
   int status = 404;
-  if (resolve_path(fs, folder, 1, parent, sizeof parent, &status) != 0) {
+  int to_fonts = fs->fonts[0] && is_font_name(req->file_name);
+  if (to_fonts) {
+    if (mkdir(fs->fonts, 0755) != 0 && errno != EEXIST) {
+      discard_body(fd, req);
+      return reply_text(fd, 500, "Internal Server Error", "送信できませんでした");
+    }
+    snprintf(parent, sizeof parent, "%s", fs->fonts);
+  } else if (resolve_path(fs, folder, 1, parent, sizeof parent, &status) != 0) {
     discard_body(fd, req);
     if (status == 403) {
       return reply_text(fd, 403, "Forbidden", "保護されたファイルです");
     }
     return reply_text(fd, 500, "Internal Server Error", "送信できませんでした");
+  } else if (is_fonts_dir(fs, parent)) {
+    discard_body(fd, req);
+    return reply_text(fd, 400, "Bad Request", "書体フォルダには書体ファイルを置いてください");
   }
-  if (strcmp(parent, fs->root) == 0 && root_reserved(req->file_name)) {
+  if (strcmp(parent, fs->root) == 0 && root_blocked(fs, req->file_name)) {
     discard_body(fd, req);
     return reply_text(fd, 403, "Forbidden", "保護されたファイルです");
   }
@@ -1065,7 +1133,7 @@ static int handle_upload(FileServer *fs, int fd, Req *req) {
   atomic_store(&fs->dirty, 1);
   yomu_log("transfer uploaded %s (%lld bytes)", dest, (long long)req->content_length);
   char msg[320];
-  snprintf(msg, sizeof msg, "送信しました: %s", req->file_name);
+  snprintf(msg, sizeof msg, "%s: %s", to_fonts ? "書体を追加しました" : "送信しました", req->file_name);
   return reply_text(fd, 200, "OK", msg);
 }
 
@@ -1348,6 +1416,69 @@ static void firewall_close(FileServer *fs) {
   fs->firewall = 0;
 }
 
+static int path_has_prefix(const char *path, const char *prefix) {
+  size_t n = strlen(prefix);
+  if (strncmp(path, prefix, n) != 0) {
+    return 0;
+  }
+  return path[n] == '\0' || path[n] == '/';
+}
+
+static int fonts_refused(const FileServer *fs, const char *path) {
+  return !path || !path[0] || strlen(path) >= sizeof fs->fonts || strcmp(path, "/") == 0 ||
+         path_has_prefix(path, fs->root) || path_has_prefix(fs->root, path);
+}
+
+int fileserver_set_fonts(FileServer *fs, const char *dir) {
+  char parent[FS_PATH];
+  char full[FS_PATH];
+  char *rp;
+  char *slash;
+  struct stat st;
+  if (!fs || !dir || !dir[0] || strlen(dir) >= sizeof fs->fonts) {
+    return -1;
+  }
+  if (stat(dir, &st) == 0 && !S_ISDIR(st.st_mode)) {
+    yomu_log("transfer fonts %s: not a directory", dir);
+    return -1;
+  }
+  if (stat(dir, &st) != 0) {
+    snprintf(parent, sizeof parent, "%s", dir);
+    slash = strrchr(parent, '/');
+    if (!slash || slash == parent) {
+      return -1;
+    }
+    *slash = '\0';
+    rp = realpath(parent, NULL);
+    if (!rp) {
+      yomu_log("transfer fonts %s: %s", dir, strerror(errno));
+      return -1;
+    }
+    if (snprintf(full, sizeof full, "%s/%s", rp, slash + 1) >= (int)sizeof full) {
+      free(rp);
+      return -1;
+    }
+    free(rp);
+    if (fonts_refused(fs, full)) {
+      yomu_log("transfer fonts %s: refused", dir);
+      return -1;
+    }
+    if (mkdir(full, 0755) != 0 && errno != EEXIST) {
+      yomu_log("transfer fonts %s: %s", dir, strerror(errno));
+      return -1;
+    }
+  }
+  rp = realpath(dir, NULL);
+  if (!rp || fonts_refused(fs, rp)) {
+    yomu_log("transfer fonts %s: refused", dir);
+    free(rp);
+    return -1;
+  }
+  memcpy(fs->fonts, rp, strlen(rp) + 1);
+  free(rp);
+  return 0;
+}
+
 FileServer *fileserver_start(const char *root, int port) {
   ignore_pipe();
   if (!root || !root[0] || port < 0 || port > 65535) {
@@ -1359,7 +1490,13 @@ FileServer *fileserver_start(const char *root, int port) {
   }
   fs->listen_fd = -1;
   char *rp = realpath(root, NULL);
-  if (!rp || strlen(rp) >= sizeof fs->root || strcmp(rp, "/") == 0) {
+  if (!rp) {
+    yomu_log("transfer root %s: %s", root, strerror(errno));
+    free(fs);
+    return NULL;
+  }
+  if (strlen(rp) >= sizeof fs->root || strcmp(rp, "/") == 0) {
+    yomu_log("transfer root %s: refused", root);
     free(rp);
     free(fs);
     return NULL;
@@ -1367,7 +1504,13 @@ FileServer *fileserver_start(const char *root, int port) {
   memcpy(fs->root, rp, strlen(rp) + 1);
   free(rp);
   struct stat st;
-  if (stat(fs->root, &st) != 0 || !S_ISDIR(st.st_mode)) {
+  if (stat(fs->root, &st) != 0) {
+    yomu_log("transfer root %s: %s", fs->root, strerror(errno));
+    free(fs);
+    return NULL;
+  }
+  if (!S_ISDIR(st.st_mode)) {
+    yomu_log("transfer root %s: not a directory", fs->root);
     free(fs);
     return NULL;
   }
@@ -1383,7 +1526,14 @@ FileServer *fileserver_start(const char *root, int port) {
   addr.sin_family = AF_INET;
   addr.sin_addr.s_addr = htonl(INADDR_ANY);
   addr.sin_port = htons((uint16_t)port);
-  if (bind(fd, (struct sockaddr *)&addr, sizeof addr) != 0 || listen(fd, 4) != 0) {
+  if (bind(fd, (struct sockaddr *)&addr, sizeof addr) != 0) {
+    yomu_log("transfer bind %d: %s", port, strerror(errno));
+    close(fd);
+    free(fs);
+    return NULL;
+  }
+  if (listen(fd, 4) != 0) {
+    yomu_log("transfer listen %d: %s", port, strerror(errno));
     close(fd);
     free(fs);
     return NULL;
@@ -1403,9 +1553,7 @@ FileServer *fileserver_start(const char *root, int port) {
   uint32_t mdns_addr = 0;
   unsigned mdns_ifindex = 0;
   collect_urls(fs, &mdns_addr, &mdns_ifindex);
-  if (port != 0) {
-    firewall_open(fs);
-  }
+  firewall_open(fs);
   if (mdns_addr) {
     fs->mdns = mdns_start(mdns_addr, fs->port, mdns_ifindex);
     if (fs->mdns) {

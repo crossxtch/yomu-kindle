@@ -555,7 +555,93 @@ static void test_clock_offset(void) {
   rmdir(home);
 }
 
+static void test_font_upload(void) {
+  char books[] = "/tmp/yomu-fontbooks-XXXXXX";
+  char fonts[] = "/tmp/yomu-fontfaces-XXXXXX";
+  char url[160];
+  char path[512];
+  char got[64];
+  int status = 0;
+  char *body = NULL;
+  FileServer *fs;
+  int port;
+  if (!mkdtemp(books) || !mkdtemp(fonts)) {
+    expect(0, "font temp dirs");
+    return;
+  }
+  fs = fileserver_start(books, 0);
+  port = fs ? fileserver_port(fs) : 0;
+  expect(fs != NULL && port > 0, "font server");
+  expect(fs && fileserver_set_fonts(fs, fonts) == 0, "font dir attached");
+  if (!fs || port <= 0) {
+    rm_tree(books);
+    rm_tree(fonts);
+    return;
+  }
+  url_of(url, sizeof url, port, "/upload");
+  expect(call("POST", url, "application/octet-stream", "X-File-Path: %2F\r\nX-File-Name: Note.ttf\r\n", "font-bytes",
+              &status, &body) == 0,
+         "font upload rc");
+  expect(status == 200 && body && strstr(body, "書体を追加しました: Note.ttf"), "font upload body");
+  free(body);
+  body = NULL;
+  snprintf(path, sizeof path, "%s/Note.ttf", fonts);
+  expect(read_all(path, got, sizeof got) == 10 && strcmp(got, "font-bytes") == 0, "font bytes in yomu/fonts");
+  snprintf(path, sizeof path, "%s/Note.ttf", books);
+  expect(read_all(path, got, sizeof got) < 0, "font is not stored with books");
+  url_of(url, sizeof url, port, "/api/files?path=%2F");
+  expect(call("GET", url, NULL, NULL, NULL, &status, &body) == 0, "font root list rc");
+  expect(status == 200 && body && strstr(body, "\"name\":\"fonts\"") && strstr(body, "\"isDirectory\":true"),
+         "root lists fonts");
+  free(body);
+  body = NULL;
+  url_of(url, sizeof url, port, "/api/files?path=%2Ffonts");
+  expect(call("GET", url, NULL, NULL, NULL, &status, &body) == 0, "font list rc");
+  expect(status == 200 && body && strstr(body, "\"name\":\"Note.ttf\""), "fonts folder lists the face");
+  free(body);
+  body = NULL;
+  url_of(url, sizeof url, port, "/upload");
+  expect(call("POST", url, "application/octet-stream", "X-File-Path: %2F\r\nX-File-Name: Story.epub\r\n", "book",
+              &status, &body) == 0,
+         "book upload beside font rc");
+  expect(status == 200 && body && strstr(body, "送信しました: Story.epub"), "book upload stays a book");
+  free(body);
+  body = NULL;
+  snprintf(path, sizeof path, "%s/Story.epub", books);
+  expect(read_all(path, got, sizeof got) == 4 && strcmp(got, "book") == 0, "book bytes stay in books");
+  url_of(url, sizeof url, port, "/upload");
+  expect(call("POST", url, "application/octet-stream", "X-File-Path: %2Ffonts\r\nX-File-Name: Story.txt\r\n", "nope",
+              &status, &body) == 0,
+         "text in fonts rc");
+  expect(status == 400, "fonts folder rejects a book file");
+  free(body);
+  body = NULL;
+  url_of(url, sizeof url, port, "/mkdir");
+  expect(call("POST", url, "application/x-www-form-urlencoded", NULL, "name=fonts&path=%2F", &status, &body) == 0,
+         "mkdir fonts rc");
+  expect(status == 403, "books root cannot grow a fonts folder");
+  free(body);
+  body = NULL;
+  url_of(url, sizeof url, port, "/delete");
+  expect(call("POST", url, "application/x-www-form-urlencoded", NULL, "path=%2Ffonts", &status, &body) == 0,
+         "delete fonts dir rc");
+  expect(status == 403, "fonts folder stays");
+  free(body);
+  body = NULL;
+  expect(call("POST", url, "application/x-www-form-urlencoded", NULL, "path=%2Ffonts%2FNote.ttf", &status, &body) == 0,
+         "delete font rc");
+  expect(status == 200, "font file can be deleted");
+  free(body);
+  body = NULL;
+  snprintf(path, sizeof path, "%s/Note.ttf", fonts);
+  expect(read_all(path, got, sizeof got) < 0, "deleted font is gone");
+  fileserver_stop(fs);
+  rm_tree(books);
+  rm_tree(fonts);
+}
+
 void test_fileserver(void) {
+  test_font_upload();
   test_mdns();
   test_clock_offset();
   expect(fileserver_start("/", 0) == NULL, "refuse root");

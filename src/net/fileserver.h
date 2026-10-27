@@ -5,10 +5,15 @@
  * src/net/filepage.html and the list/upload/download/mkdir/rename/move/delete
  * calls that page makes. POST /api/timezone stores the shelf-clock offset.
  * The server runs until fileserver_stop. port 0 asks the OS for a free port.
+ * fileserver_set_fonts makes /fonts that directory. A .ttf, .ttc, .otf, or
+ * .otc upload is stored there.
  */
 typedef struct FileServer FileServer;
 
 FileServer *fileserver_start(const char *root, int port);
+
+/* Creates dir when it is missing. The page lists it as /fonts. */
+int fileserver_set_fonts(FileServer *fs, const char *dir);
 
 /* Stops listening and waits for the current request to finish.
  * Returns 1 when a file was created, replaced, renamed, moved, or deleted.
