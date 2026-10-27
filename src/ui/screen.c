@@ -79,6 +79,14 @@ int edge_band(int height) {
   return edge;
 }
 
+int grip_band(int width) {
+  int band = width * 6 / 100;
+  if (band < 1 && width > 0) {
+    band = 1;
+  }
+  return band;
+}
+
 static int rows_for(const Layout *layout, int height, int with_bar) {
   int bottom = layout->footer_h + (with_bar ? layout->row_h : 0);
   int body = height - layout->header_h - bottom;

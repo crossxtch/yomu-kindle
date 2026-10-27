@@ -57,7 +57,8 @@ Host tests run on a desktop. This build has also been used on a Paperwhite 11.
 A tap of at most 300 ms turns the page forward. A longer press on the page
 does nothing. Swipe down from the top eighth of the screen to open the menu
 over the page. Swipe up from the bottom eighth to go back one page. Any other
-touch on the page does nothing.
+touch on the page does nothing. A touch that starts in the left 6% of the
+screen is ignored on every screen.
 
 The menu lists 再開, 目次, 本棚, and 文字. The top line is the current
 page and the page count, as in 3 / 120 ページ. Tap that line to type a

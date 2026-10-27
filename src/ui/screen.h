@@ -86,6 +86,8 @@ void move_cursor(int *cursor, int *top, int count, int window, int delta);
 int list_delta(AppEvKind kind, int window);
 /* Top and bottom eighth of the screen. A swipe has to start there. */
 int edge_band(int height);
+/* Left 6% of the landscape width. A press here is not a touch. */
+int grip_band(int width);
 void list_chrome(const Layout *layout, int height, int total, int top, int need_back, Chrome *out);
 void fit_list(const Layout *layout, int height, int total, int *cursor, int *top, int need_back, Chrome *out);
 void page_list(int *cursor, int *top, int total, int window, int dir);

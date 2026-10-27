@@ -1062,6 +1062,10 @@ static void test_rotate(void) {
     yomu_to_logical(rot, 1236, 1648, nx, ny, &lx, &ly);
     expect(lx == lw / 2 && ly == lh / 2, "rotate roundtrip");
   }
+  int band = grip_band(1648);
+  expect(band == 98, "grip band on the paperwhite");
+  expect(97 < band, "press at 97 is in the grip");
+  expect(98 >= band, "press at 98 is live");
 }
 
 static void zip_put(FILE *fp, const void *bytes, size_t n, uint32_t *off) {

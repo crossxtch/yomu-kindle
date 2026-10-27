@@ -3,6 +3,7 @@
 #include "kindle_power.h"
 #include "log.h"
 #include "rotate.h"
+#include "screen.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -260,6 +261,10 @@ static int finish_gesture(KindleInput *input, Dev *dev, AppEvent *event) {
   int ady = dy < 0 ? -dy : dy;
   dev->down = 0;
   dev->down_ms = 0;
+  /* The left strip is a grip. The press point decides, and the gesture is dropped. */
+  if (x0 < grip_band(input->width)) {
+    return 0;
+  }
   event->x0 = x0;
   event->y0 = y0;
   event->x = x1;
