@@ -196,10 +196,11 @@ compiler.
 
 ```
 src/ui        screens, gestures, and menu text
-src/book      library, progress, type.txt, and the typesetter bridge
-src/paint     FreeType face, gray paint, and the POSIX file layer
-src/typeset   parser and layouter (EPUB, DRM-free MOBI/AZW3, and txt to glyph runs)
-src/typeset/book   Kindle book driver and picture page
+src/book      shelf, progress, type.txt, and the open-book session
+src/ingest    unpack a book into a contents list, atoms, and pictures
+src/typeset   lay atoms out into pages
+src/paint     paint one page from glyph runs
+src/port      file layer shared by the ingest and the renderer
 src/kindle    framebuffer, touch, sleep, and main
 src/net       the transfer server and the host HTTP client
 src/util      log and UTF-8
@@ -208,10 +209,11 @@ tests         host tests run by make test
 reference/koreader   notes only; it is not built or linked
 ```
 
-The book-to-page library lives in `src/typeset`. yomu
-builds those sources and draws the glyph runs with FreeType. `FtFont`,
-`HalPosix`, and `TypesetBookGray` stay in `src/paint`. The MIT notice
-is `src/typeset/LICENSE`.
+Opening a book runs three stages. `src/ingest` unpacks an EPUB, a DRM-free
+MOBI or AZW3, or a text file into a contents list and atoms. `src/typeset`
+lays those atoms out into pages. `src/paint` draws one page with FreeType.
+`TypesetBook` in `src/book` runs the three stages. The MIT notice is
+`src/ingest/LICENSE`.
 
 ## Third party
 

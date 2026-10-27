@@ -1,7 +1,5 @@
 #include "TextIr.h"
 
-#include "Kinsoku.h"
-
 namespace ts {
 namespace {
 
@@ -27,6 +25,12 @@ constexpr uint32_t kBouten[] = {0x508D, 0x70B9};                    // 傍点
 constexpr uint32_t kBousen[] = {0x508D, 0x7DDA};                    // 傍線
 constexpr uint32_t kGoma[] = {0x30B4, 0x30DE};
 constexpr uint32_t kGomaH[] = {0x3054, 0x307E};
+
+bool isHiragana(const uint32_t cp) { return cp >= 0x3040 && cp <= 0x309F; }
+bool isKatakana(const uint32_t cp) { return cp >= 0x30A0 && cp <= 0x30FF; }
+bool isKanji(const uint32_t cp) {
+  return (cp >= 0x4E00 && cp <= 0x9FFF) || (cp >= 0x3400 && cp <= 0x4DBF) || (cp >= 0xF900 && cp <= 0xFAFF);
+}
 
 bool isAozoraKanji(const uint32_t cp) {
   return cp == 0x3005 || cp == 0x3007 || cp == 0x303B || isKanji(cp);  // 々 〇 〻

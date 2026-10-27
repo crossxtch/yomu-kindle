@@ -19,7 +19,7 @@ Append a new field at the end of a struct. On `TypesetBook`, `faceIndex` stays a
 The Makefile records header dependencies for the host and Kindle builds. After a C++ signature change, rebuild every translation unit: `rm -rf build/host && make test`. The Kindle binary is `rm -rf build/kindle && make kindle`. Host objects are compiled with `cc -Wall -Wextra -Werror`.
 A new parameter changes the C++ mangled name. A default argument does not keep the old symbol. Recompile every caller.
 
-The parser and layouter are `src/typeset`. The Kindle book driver and stb picture page are `src/typeset/book`. The host HAL headers are `src/typeset/port`. `src/paint` keeps `FtFont`, `TypesetBookGray`, `HalPosix`, and `compat/Logging.h`.
+The reader is three stages. `src/ingest` unpacks a book into a contents list, atoms, and pictures. `src/typeset` lays atoms out into glyph runs. `src/paint` paints one page: `FtFont`, `TypesetBookGray`, `HalPosix`, and `compat/Logging.h`. `TypesetBook` in `src/book` runs the three stages. The host HAL headers are `src/port`.
 `reference/koreader` and cookbook-jp are reference only. Do not link them. Do not bump the vendored FreeType. Do not commit commercial font files.
 
 The body face list has no gothic row, no Code2000 row, and no `標準` face row. The size step labeled `標準` stays. The menu face stays gothic.

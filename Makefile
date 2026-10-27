@@ -4,11 +4,13 @@
 #
 # src/util     log and UTF-8
 # src/ui       event loop, screens, and UI text
-# src/book     library scan, progress, type size, typesetter bridge
+# src/book     shelf, progress, and the open-book session
+# src/ingest   unpack a book into a contents list, atoms, and pictures
+# src/typeset  lay atoms out into glyph runs
+# src/paint    paint one page
+# src/port     file HAL shared by the ingest and the renderer
 # src/net      transfer server, its page, and the host HTTP client
 # src/kindle   framebuffer, touch, power, and main
-# src/paint    FreeType raster
-# src/typeset  parser, layouter, Kindle book driver, and host HAL headers
 #
 # The HTTP client is only for the host tests. The Kindle build serves
 # files itself and does not link that client.
@@ -22,7 +24,7 @@ PUFF_CFLAGS ?= -std=gnu11 -O2 -w -D_FILE_OFFSET_BITS=64
 TS_CXXFLAGS ?= -std=gnu++17 -O2 -Wall -Wextra -Wno-unused-parameter -Wno-unused-variable \
 	-Wno-sign-compare -Wno-missing-field-initializers -Wno-unused-function \
 	-Wno-unknown-warning-option -Wno-unused-but-set-variable -D_FILE_OFFSET_BITS=64 \
-	-Isrc/paint/compat -Isrc/paint -Isrc/typeset/book -Isrc/typeset -Isrc/typeset/port \
+	-Isrc/paint/compat -Isrc/paint -Isrc/typeset -Isrc/ingest -Isrc/port \
 	-Ithird_party -Ithird_party/freetype/include \
 	$(SRC_INCLUDES)
 FT_CFLAGS ?= -std=gnu11 -O2 -w -DFT2_BUILD_LIBRARY -D_FILE_OFFSET_BITS=64 \
@@ -67,28 +69,30 @@ KINDLE_SRCS := $(CORE_SRCS) \
 	src/kindle/kindle_power.c \
 	src/kindle/main_kindle.c
 
-TS_LIB_CPPS := \
-	src/typeset/AtomFile.cpp \
-	src/typeset/Epub.cpp \
-	src/typeset/Mobi.cpp \
-	src/typeset/FaceCss.cpp \
-	src/typeset/HtmlIR.cpp \
-	src/typeset/HtmlSax.cpp \
+INGEST_CPPS := \
+	src/ingest/AtomFile.cpp \
+	src/ingest/Epub.cpp \
+	src/ingest/Mobi.cpp \
+	src/ingest/FaceCss.cpp \
+	src/ingest/HtmlIR.cpp \
+	src/ingest/HtmlSax.cpp \
+	src/ingest/TextIr.cpp \
+	src/ingest/Utf8.cpp \
+	src/ingest/Zip.cpp \
+	src/ingest/PicturePage.cpp
+
+TYPESET_CPPS := \
 	src/typeset/Kinsoku.cpp \
-	src/typeset/Layout.cpp \
-	src/typeset/TextIr.cpp \
-	src/typeset/Utf8.cpp \
-	src/typeset/Zip.cpp
+	src/typeset/Layout.cpp
 
-TS_BOOK_CPPS := \
-	src/typeset/book/PicturePage.cpp \
-	src/typeset/book/TypesetBook.cpp \
-	src/typeset/book/TypesetBookBuild.cpp
-
-TS_CPPS := \
+PAINT_CPPS := \
 	src/paint/FtFont.cpp \
 	src/paint/HalPosix.cpp \
-	src/paint/TypesetBookGray.cpp \
+	src/paint/TypesetBookGray.cpp
+
+BOOK_CPPS := \
+	src/book/TypesetBook.cpp \
+	src/book/TypesetBookBuild.cpp \
 	src/book/tsbook.cpp
 
 FT_SRCS := \
@@ -107,11 +111,11 @@ FT_SRCS := \
 	third_party/freetype/src/smooth/smooth.c
 
 HOST_OBJS := $(patsubst src/%.c,$(HOST)/%.o,$(HOST_SRCS)) $(HOST)/puff.o $(HOST)/filepage.o $(HOST)/stb_truetype.o \
-	$(patsubst src/%.cpp,$(HOST)/%.o,$(TS_CPPS) $(TS_LIB_CPPS) $(TS_BOOK_CPPS)) \
+	$(patsubst src/%.cpp,$(HOST)/%.o,$(INGEST_CPPS) $(TYPESET_CPPS) $(PAINT_CPPS) $(BOOK_CPPS)) \
 	$(patsubst third_party/freetype/src/%.c,$(HOST)/ft/%.o,$(FT_SRCS))
 KINDLE_OBJS := $(patsubst src/%.c,$(KINDLE)/%.o,$(KINDLE_SRCS)) $(KINDLE)/puff.o $(KINDLE)/filepage.o \
 	$(KINDLE)/stb_truetype.o \
-	$(patsubst src/%.cpp,$(KINDLE)/%.o,$(TS_CPPS) $(TS_LIB_CPPS) $(TS_BOOK_CPPS)) \
+	$(patsubst src/%.cpp,$(KINDLE)/%.o,$(INGEST_CPPS) $(TYPESET_CPPS) $(PAINT_CPPS) $(BOOK_CPPS)) \
 	$(patsubst third_party/freetype/src/%.c,$(KINDLE)/ft/%.o,$(FT_SRCS))
 
 .PHONY: all test kindle package clean
