@@ -28,6 +28,7 @@ The body face list has no gothic row, no Code2000 row, and no `標準` face row.
 
 A commit subject is one short imperative sentence ending with a period. The body is empty.
 Commit only when asked. Do not push unless asked. One commit is one change.
+When code changes behavior, paths, or the build, update `README.md`, both `INSTALL.txt` files, `AGENTS.md`, and the matching skill in that same change.
 
 ## Skills
 
