@@ -1,10 +1,11 @@
 # yomu
 
-A reader for `.epub`, `.txt`, and DRM-free `.mobi` and `.azw3` books on a jailbroken Kindle. It is a small
+A reader for `.epub`, `.txt`, and DRM-free `.mobi` and `.azw3` books. On a jailbroken Kindle it is a small
 standalone program, the same idea as [KOReader](https://github.com/koreader/koreader)'s
 Kindle launcher: a KUAL menu entry, the Kindle UI paused, and pages drawn
-straight to the e-ink panel. Japanese text is typeset in the app, in vertical
-columns, with a mincho face already on the Kindle.
+straight to the e-ink panel. The same reader also builds as an Android app for a
+jailbroken Sony DPT-RP1. Japanese text is typeset in the app, in vertical
+columns, with a mincho face already on the device.
 
 Filenames and chapter names are UTF-8. yomu draws them
 with a Japanese font already on the Kindle: Gothic, then Mincho, then
@@ -52,13 +53,29 @@ session and comes back when yomu exits.
 
 Host tests run on a desktop. This build has also been used on a Paperwhite 11.
 
+## DPT-RP1
+
+`make android` writes `dist/android/yomu.apk`, an armeabi-v7a app for Android 5.1.
+Install it with `adb install -r` on a rooted DPT-RP1. The install notes are
+`platform/android/INSTALL.txt`. The activity stays in landscape, leaves the
+Android framework running, and copies each update into a bitmap. It then asks
+the panel to refresh that rectangle: `View.invalidate(Rect, int)` when the
+firmware has that method, otherwise the six-argument `postInvalidateDelayed`
+KOReader uses for this device (partial GC16, or a full GC16 when yomu asks
+for a flash). A plain `View.invalidate` remains if neither method exists.
+
+Books live in `yomu/books` on external storage, usually `/sdcard/yomu/books`.
+The 文字 screen scans `/system/fonts` and lists every face that has kana and kanji, plus font files in `yomu/fonts`.
+The transfer server tries port 80, then 8080, then 3000, then 4000, then 5000, then any free port. This app cannot bind port 80. The screen shows the address. The power button sleeps the device, and
+yomu repaints when the screen comes back.
+
 ## Reading
 
 A tap of at most 300 ms turns the page forward. A longer press on the page
 does nothing. Swipe down from the top eighth of the screen to open the menu
 over the page. Swipe up from the bottom eighth to go back one page. Any other
-touch on the page does nothing. A touch that starts in the left 6% of the
-screen is ignored on every screen.
+touch on the page does nothing. On the Kindle, a touch that starts in the
+left 6% of the screen is ignored on every screen.
 
 The menu lists 再開, 目次, 本棚, and 文字. The top line is the current
 page and the page count, as in 3 / 120 ページ. Tap that line to type a
@@ -199,6 +216,16 @@ That refreshes `dist/kindle/`. The prebuilt `dist/kindle/yomu/yomu` in
 this tree is that static binary, so a Kindle can be loaded without a cross
 compiler.
 
+The DPT-RP1 APK needs the Android SDK and NDK r27 (API 22, armeabi-v7a):
+
+```
+make android
+```
+
+`ANDROID_SDK_ROOT` and `ANDROID_NDK` override the SDK and NDK directories.
+The default SDK root on this machine is the Homebrew command-line tools
+directory. The recipe signs the APK with a debug key under `build/android/`.
+
 ## Source
 
 ```
@@ -209,9 +236,11 @@ src/typeset   lay atoms out into pages
 src/paint     paint one page from glyph runs
 src/port      file layer shared by the ingest and the renderer
 src/kindle    framebuffer, touch, sleep, and main
+src/android   DPT-RP1 bitmap, touch, and JNI
 src/net       the transfer server and the host HTTP client
 src/util      log and UTF-8
 platform/kindle   KUAL launcher, copied into dist/kindle
+platform/android  APK manifest, activity, and install notes
 tests         host tests run by make test
 reference/koreader   notes only; it is not built or linked
 ```

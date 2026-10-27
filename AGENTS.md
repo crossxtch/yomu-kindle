@@ -13,13 +13,15 @@ Strings drawn by the C UI stay Japanese. `README.md` and both `INSTALL.txt` file
 The device is a Paperwhite 11. `env_rotate()` in `src/kindle/kindle_fb.c` always returns 3. Ignore `YOMU_ROTATE`.
 Sleep works only while the Kindle framework is running. Launch from the KUAL entry `yomu`. Leave the frontlight off.
 
+The DPT-RP1 port is `make android`. It writes `dist/android/yomu.apk` (armeabi-v7a, Android 5.1). The activity is landscape. Books are `yomu/books` on external storage. Each present copies the gray buffer and requests a panel waveform for that rectangle. Leave the Android framework running.
+
 ## Source
 
 Append a new field at the end of a struct. On `TypesetBook`, `faceIndex` stays after `hookCtx`.
 The Makefile records header dependencies for the host and Kindle builds. After a C++ signature change, rebuild every translation unit: `rm -rf build/host && make test`. The Kindle binary is `rm -rf build/kindle && make kindle`. Host objects are compiled with `cc -Wall -Wextra -Werror`.
 A new parameter changes the C++ mangled name. A default argument does not keep the old symbol. Recompile every caller.
 
-The reader is three stages. `src/ingest` unpacks a book into a contents list, atoms, and pictures. `src/typeset` lays atoms out into glyph runs. `src/paint` paints one page: `FtFont`, `TypesetBookGray`, `HalPosix`, and `compat/Logging.h`. `TypesetBook` in `src/book` runs the three stages. The host HAL headers are `src/port`.
+The reader is three stages. `src/ingest` unpacks a book into a contents list, atoms, and pictures. `src/typeset` lays atoms out into glyph runs. `src/paint` paints one page: `FtFont`, `TypesetBookGray`, `HalPosix`, and `compat/Logging.h`. `TypesetBook` in `src/book` runs the three stages. The host HAL headers are `src/port`. `src/android` is the DPT-RP1 JNI host. The APK sources are `platform/android`.
 `reference/koreader` and cookbook-jp are reference only. Do not link them. Do not bump the vendored FreeType. Do not commit commercial font files.
 
 The body face list has no gothic row, no Code2000 row, and no `標準` face row. The size step labeled `標準` stays. The menu face stays gothic.

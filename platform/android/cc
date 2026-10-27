@@ -1,0 +1,79 @@
+#!/bin/sh
+# Pick the API 22 armeabi-v7a compiler. NDK clang when it runs on this
+# machine, otherwise zig against that NDK's sysroot.
+set -eu
+mode=${1:?cc, c++, or the compiler mode}
+shift
+
+if [ -z "${ANDROID_NDK:-}" ] || [ ! -d "$ANDROID_NDK" ]; then
+  echo "android: NDK not found. Install ndk;27.2.12479018 with sdkmanager." >&2
+  exit 1
+fi
+
+prebuilt=
+for dir in \
+  "$ANDROID_NDK"/toolchains/llvm/prebuilt/darwin-arm64 \
+  "$ANDROID_NDK"/toolchains/llvm/prebuilt/darwin-x86_64 \
+  "$ANDROID_NDK"/toolchains/llvm/prebuilt/linux-aarch64 \
+  "$ANDROID_NDK"/toolchains/llvm/prebuilt/linux-x86_64
+do
+  if [ -x "$dir/bin/armv7a-linux-androideabi22-clang" ]; then
+    prebuilt=$dir
+    break
+  fi
+done
+if [ -z "$prebuilt" ]; then
+  echo "android: armv7a-linux-androideabi22-clang is not in $ANDROID_NDK" >&2
+  exit 1
+fi
+
+if [ "$mode" = c++ ]; then
+  bin="$prebuilt/bin/armv7a-linux-androideabi22-clang++"
+else
+  bin="$prebuilt/bin/armv7a-linux-androideabi22-clang"
+fi
+
+shared=0
+for arg in "$@"; do
+  if [ "$arg" = -shared ]; then
+    shared=1
+  fi
+done
+
+if "$bin" -dumpmachine >/dev/null 2>&1; then
+  if [ "$shared" -eq 1 ]; then
+    exec "$bin" -static-libstdc++ "$@"
+  fi
+  exec "$bin" "$@"
+fi
+
+sysroot="$prebuilt/sysroot"
+if [ ! -d "$sysroot/usr/include" ]; then
+  echo "android: $bin does not run here and the sysroot is missing" >&2
+  exit 1
+fi
+
+set -- -target arm-linux-androideabi --sysroot "$sysroot" \
+  -I"$sysroot/usr/include" \
+  -I"$sysroot/usr/include/arm-linux-androideabi" \
+  -include src/android/android_api.h \
+  "$@"
+
+if [ "$shared" -eq 1 ]; then
+  set -- "$@" -L"$sysroot/usr/lib/arm-linux-androideabi/22" \
+    -L"$sysroot/usr/lib/arm-linux-androideabi"
+  cxx="$sysroot/usr/lib/arm-linux-androideabi/libc++_static.a"
+  abi="$sysroot/usr/lib/arm-linux-androideabi/libc++abi.a"
+  unwind="$sysroot/usr/lib/arm-linux-androideabi/libunwind.a"
+  if [ -f "$cxx" ]; then
+    set -- "$@" "$cxx"
+  fi
+  if [ -f "$abi" ]; then
+    set -- "$@" "$abi"
+  fi
+  if [ -f "$unwind" ]; then
+    set -- "$@" "$unwind"
+  fi
+fi
+
+exec zig "$mode" "$@"

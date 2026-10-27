@@ -7,6 +7,9 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <net/if.h>
+#if defined(__ANDROID__) && __ANDROID_API__ < 24
+#include "android_ifaddrs.h"
+#endif
 #include <netinet/in.h>
 #include <stdio.h>
 #include <stdlib.h>

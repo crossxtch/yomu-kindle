@@ -11,6 +11,7 @@
 # src/port     file HAL shared by the ingest and the renderer
 # src/net      transfer server, its page, and the host HTTP client
 # src/kindle   framebuffer, touch, power, and main
+# src/android  DPT-RP1 JNI host. The APK shell is platform/android.
 #
 # The HTTP client is only for the host tests. The Kindle build serves
 # files itself and does not link that client.
@@ -118,7 +119,7 @@ KINDLE_OBJS := $(patsubst src/%.c,$(KINDLE)/%.o,$(KINDLE_SRCS)) $(KINDLE)/puff.o
 	$(patsubst src/%.cpp,$(KINDLE)/%.o,$(INGEST_CPPS) $(TYPESET_CPPS) $(PAINT_CPPS) $(BOOK_CPPS)) \
 	$(patsubst third_party/freetype/src/%.c,$(KINDLE)/ft/%.o,$(FT_SRCS))
 
-.PHONY: all test kindle package clean
+.PHONY: all test kindle android package clean
 
 all: $(HOST)/test_app
 
@@ -207,6 +208,71 @@ dist/kindle/yomu/yomu: $(KINDLE_OBJS) \
 
 kindle: dist/kindle/yomu/yomu
 
+ANDROID_SDK ?= $(shell \
+	if [ -n "$$ANDROID_SDK_ROOT" ]; then printf '%s\n' "$$ANDROID_SDK_ROOT"; \
+	elif [ -n "$$ANDROID_HOME" ]; then printf '%s\n' "$$ANDROID_HOME"; \
+	elif [ -d /opt/homebrew/share/android-commandlinetools ]; then printf '%s\n' /opt/homebrew/share/android-commandlinetools; \
+	elif [ -d "$$HOME/Library/Android/sdk" ]; then printf '%s\n' "$$HOME/Library/Android/sdk"; \
+	fi)
+ANDROID_NDK ?= $(shell \
+	if [ -n "$$ANDROID_NDK_HOME" ]; then printf '%s\n' "$$ANDROID_NDK_HOME"; \
+	elif [ -n "$$ANDROID_NDK" ]; then printf '%s\n' "$$ANDROID_NDK"; \
+	else ls -d $(ANDROID_SDK)/ndk/* 2>/dev/null | sort -V | tail -1; \
+	fi)
+ANDROID := $(BUILD)/android
+# API 22 has no fseeko64. _FILE_OFFSET_BITS=64 hides the 32-bit stdio calls.
+ANDROID_CFLAGS := $(filter-out -D_FILE_OFFSET_BITS=64,$(CFLAGS)) -fPIC -Isrc/android
+ANDROID_CXXFLAGS := $(filter-out -D_FILE_OFFSET_BITS=64,$(TS_CXXFLAGS)) -fPIC -Isrc/android
+ANDROID_PUFF_CFLAGS := $(filter-out -D_FILE_OFFSET_BITS=64,$(PUFF_CFLAGS)) -fPIC
+ANDROID_FT_CFLAGS := $(filter-out -D_FILE_OFFSET_BITS=64,$(FT_CFLAGS)) -fPIC
+ANDROID_SRCS := $(CORE_SRCS) \
+	src/android/android_ifaddrs.c \
+	src/android/android_host.c
+ANDROID_OBJS := $(patsubst src/%.c,$(ANDROID)/%.o,$(ANDROID_SRCS)) $(ANDROID)/puff.o $(ANDROID)/filepage.o \
+	$(ANDROID)/stb_truetype.o \
+	$(patsubst src/%.cpp,$(ANDROID)/%.o,$(INGEST_CPPS) $(TYPESET_CPPS) $(PAINT_CPPS) $(BOOK_CPPS)) \
+	$(patsubst third_party/freetype/src/%.c,$(ANDROID)/ft/%.o,$(FT_SRCS))
+ANDROID_JAVA := \
+	platform/android/src/dev/yomu/YomuActivity.java \
+	platform/android/src/dev/yomu/YomuNative.java \
+	platform/android/src/dev/yomu/YomuView.java
+ANDROID_CC := platform/android/cc
+
+$(ANDROID)/%.o: src/%.c
+	mkdir -p $(dir $@)
+	ANDROID_NDK='$(ANDROID_NDK)' $(ANDROID_CC) cc $(ANDROID_CFLAGS) -c -o $@ $<
+
+$(ANDROID)/puff.o: third_party/puff.c
+	mkdir -p $(dir $@)
+	ANDROID_NDK='$(ANDROID_NDK)' $(ANDROID_CC) cc $(ANDROID_PUFF_CFLAGS) -c -o $@ $<
+
+$(ANDROID)/filepage.o: $(BUILD)/filepage.c
+	mkdir -p $(dir $@)
+	ANDROID_NDK='$(ANDROID_NDK)' $(ANDROID_CC) cc $(ANDROID_CFLAGS) -c -o $@ $<
+
+$(ANDROID)/stb_truetype.o: third_party/stb_truetype.c
+	mkdir -p $(dir $@)
+	ANDROID_NDK='$(ANDROID_NDK)' $(ANDROID_CC) cc $(ANDROID_PUFF_CFLAGS) -Ithird_party -c -o $@ $<
+
+$(ANDROID)/%.o: src/%.cpp
+	mkdir -p $(dir $@)
+	ANDROID_NDK='$(ANDROID_NDK)' $(ANDROID_CC) c++ $(ANDROID_CXXFLAGS) -c -o $@ $<
+
+$(ANDROID)/ft/%.o: third_party/freetype/src/%.c
+	mkdir -p $(dir $@)
+	ANDROID_NDK='$(ANDROID_NDK)' $(ANDROID_CC) cc $(ANDROID_FT_CFLAGS) -c -o $@ $<
+
+$(ANDROID)/libyomu.so: $(ANDROID_OBJS)
+	mkdir -p $(dir $@)
+	ANDROID_NDK='$(ANDROID_NDK)' $(ANDROID_CC) c++ -shared -fPIC -Wl,-soname,libyomu.so \
+		-Wl,--no-undefined -o $@ $(ANDROID_OBJS) -lm -ljnigraphics -latomic
+
+dist/android/yomu.apk: $(ANDROID)/libyomu.so $(ANDROID_JAVA) platform/android/AndroidManifest.xml \
+		platform/android/INSTALL.txt platform/android/apk.sh
+	ANDROID_SDK='$(ANDROID_SDK)' platform/android/apk.sh $(ANDROID) dist/android $<
+
+android: dist/android/yomu.apk
+
 package: kindle
 
 clean:
@@ -215,3 +281,4 @@ clean:
 -include $(HOST_OBJS:.o=.d)
 -include $(HOST)/test_app.d $(HOST)/test_fileserver.d $(HOST)/test_typeset.d
 -include $(KINDLE_OBJS:.o=.d)
+-include $(ANDROID_OBJS:.o=.d)
