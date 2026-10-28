@@ -1,8 +1,8 @@
 ---
-name: yomu-kindle
+name: lazahata
 description: >
   Build the yomu Kindle binary and copy it to the Paperwhite.
-  Use when the user asks to deploy, install, scp, or refresh yomu on the Kindle, or runs /yomu-kindle.
+  Use when the user asks to deploy, install, scp, or refresh yomu on the Kindle, or runs /lazahata.
   Copy files only after they ask for a deploy.
 ---
 

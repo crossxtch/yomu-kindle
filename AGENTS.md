@@ -1,6 +1,6 @@
-# yomu-kindle
+# lazahata
 
-Kindle reader for `.epub`, `.txt`, and DRM-free `.mobi` / `.azw3`. The checkout directory is `yomu-kindle`. On the device the KUAL entry, the binary, and `/mnt/us/yomu` stay `yomu`.
+Kindle reader for `.epub`, `.txt`, and DRM-free `.mobi` / `.azw3`. The checkout directory is `lazahata`. On the device the KUAL entry, the binary, and `/mnt/us/yomu` stay `yomu`.
 
 ## Books and UI
 
@@ -34,4 +34,4 @@ A code change updates every doc it makes stale: `README.md`, both `INSTALL.txt` 
 
 ## Skills
 
-`.agents/skills/` has `yomu-kindle`, `yomu-typeset`, and `commit`. `.claude/skills` links to those directories.
+`.agents/skills/` has `lazahata`, `yomu-typeset`, and `commit`. `.claude/skills` links to those directories.
