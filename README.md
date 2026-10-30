@@ -227,6 +227,11 @@ make android
 The default SDK root on this machine is the Homebrew command-line tools
 directory. The recipe signs the APK with a debug key under `build/android/`.
 
+`./release.sh v1.2.3` pushes `main` and publishes that commit. Rebuild and
+commit `dist/` first. The tag is `v` and one to three numbers. The release
+has `yomu-kindle.zip`, `yomu.apk`, and `INSTALL-dpt.txt`. A dirty tree or
+an existing tag is refused.
+
 ## Source
 
 ```

@@ -30,6 +30,7 @@ The body face list has no gothic row, no Code2000 row, and no `標準` face row.
 
 A commit subject is one short imperative sentence ending with a period. The body is empty.
 Commit only when asked. Do not push unless asked. One commit is one change.
+`./release.sh v1.2.3` pushes `main` and publishes the committed `dist/` files. Do not run it unless asked.
 A code change updates every doc it makes stale: `README.md`, both `INSTALL.txt` files, `AGENTS.md`, and the matching skill, in that same change. Leave a fact in the code or a short comment when that is enough. Do not add a doc the code already carries.
 
 ## Skills
