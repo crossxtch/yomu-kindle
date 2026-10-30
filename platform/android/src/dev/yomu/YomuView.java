@@ -107,17 +107,16 @@ final class YomuView extends View {
     if (!down) {
       return true;
     }
-    if (action == MotionEvent.ACTION_UP) {
+    if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
       down = false;
       int ms = (int) (event.getEventTime() - event.getDownTime());
       if (ms < 0) {
         ms = 0;
       }
-      finishGesture(x0, y0, x, y, ms);
+      /* A bottom-edge swipe is the navigation bar's. Finish it anyway when
+       * the finger has already moved; a cancelled tap must not turn the page. */
+      finishGesture(x0, y0, x, y, ms, action == MotionEvent.ACTION_CANCEL);
       return true;
-    }
-    if (action == MotionEvent.ACTION_CANCEL) {
-      down = false;
     }
     return true;
   }
@@ -197,7 +196,7 @@ final class YomuView extends View {
     return y * getHeight() / bitmap.getHeight();
   }
 
-  private void finishGesture(int sx, int sy, int ex, int ey, int ms) {
+  private void finishGesture(int sx, int sy, int ex, int ey, int ms, boolean cancel) {
     int width = bitmap != null ? bitmap.getWidth() : getWidth();
     int dx = ex - sx;
     int dy = ey - sy;
@@ -209,12 +208,30 @@ final class YomuView extends View {
       thresh = 24;
     }
     if (adx < thresh && ady < thresh) {
+      if (cancel) {
+        return;
+      }
       kind = EV_TAP;
     } else if (adx >= ady) {
       kind = dx < 0 ? EV_SWIPE_LEFT : EV_SWIPE_RIGHT;
     } else {
       kind = dy < 0 ? EV_SWIPE_UP : EV_SWIPE_DOWN;
     }
+    /* The reader only accepts a swipe that starts in the bottom eighth.
+     * That strip is the navigation bar, so a start in the bottom quarter
+     * is reported as the bottom edge. */
+    if (kind == EV_SWIPE_UP) {
+      sy = liftBottom(sy);
+    }
     activity.enqueue(kind, ex, ey, sx, sy, ms);
+  }
+
+  private int liftBottom(int sy) {
+    int height = bitmap != null ? bitmap.getHeight() : getHeight();
+    int band = height / 4;
+    if (height <= 1 || sy < height - band) {
+      return sy;
+    }
+    return height - 1;
   }
 }
