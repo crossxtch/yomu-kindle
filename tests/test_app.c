@@ -338,10 +338,10 @@ static int reader_poll(AppHost *host, AppEvent *event) {
     case 6:
       expect(page_match(g_page1, host) && have && page == 1, "second tap goes forward again");
       event->kind = EV_TAP;
-      event->ms = 1000;
+      event->ms = 200;
       return 1;
     case 7:
-      expect(page_match(g_page1, host) && have && page == 1, "a long tap stays on the page");
+      expect(page_match(g_page1, host) && have && page == 1, "a 200 ms press stays on the page");
       event->kind = EV_SWIPE_UP;
       event->y0 = host->h - 1;
       event->ms = 5000;

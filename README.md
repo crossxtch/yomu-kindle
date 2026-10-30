@@ -71,7 +71,7 @@ yomu repaints when the screen comes back.
 
 ## Reading
 
-A tap of at most 300 ms turns the page forward. A longer press on the page
+A tap of at most 150 ms turns the page forward. A longer press on the page
 does nothing. Swipe down from the top eighth of the screen to open the menu
 over the page. Swipe up from the bottom eighth to go back one page. Any other
 touch on the page does nothing. On the Kindle, a touch that starts in the

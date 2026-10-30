@@ -511,7 +511,7 @@ static int leave_reader(State *st) {
 }
 
 /* A forward tap. A contact held longer than this stays on the page. */
-#define TAP_MS 300
+#define TAP_MS 150
 
 int handle_reader(State *st, const AppEvent *ev) {
   if (!reading_open(st)) {
